@@ -15,4 +15,13 @@ Any engineer who invokes AI agent with a read-only, temporary access to our appl
 ### Workflow automated: 
 Traditionally(before AI), I would have pulled a team of experts onto a triaging call, but now I can use AI for AI. I used the incident's reported timestamps and pointed the **Log-Analyzer** agent at the narrowest possible window for root cause analysis. Before I blinked, the agent pulled every relevant application/server log and agent audit log, and assembled a single trustworthy incident report. I could clearly see the anomaly within minutes: the information existed in our corpus; it just fell outside the Top-K cutoff our retrieval step was using. I closed that Priority 2 in minutes, adding the finding to my team's next retrieval-optimization intake, and I resumed my day as normal.
 
+
+### Out of Scope / Known Limitations:
+Compared to full-stack observability platforms (Splunk, Elastic, Datadog, Dynatrace, New Relic), this project deliberately does not attempt:
+- Scale — no petabyte-scale ingestion/indexing; built for bounded sample log sets, not production-volume telemetry.
+- Breadth — logs only. No metrics, traces, RUM, or infrastructure topology correlation.
+- Dashboards/alerting — no visualization layer, no SLOs, no alert/notification pipeline.
+- Production deployment maturity — no multi-tenancy, no long-term storage, no HA/scaling story.
+- Incident-data tuning — no large historical incident corpus to tune confidence thresholds or severity heuristics against; patterns are hand-authored per skill, not learned at scale.
+
 ---
