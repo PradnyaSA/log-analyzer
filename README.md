@@ -98,6 +98,32 @@ agents-cli run "approve" \
 
 Replace `<RESOURCE_NAME>` with the value from `deployment_metadata.json` after deploying (`agents-cli deploy --project <GCP_PROJECT_ID>`).
 
+### Deploying to Agent Runtime
+
+```bash
+# 1. Authenticate gcloud CLI (separate from ADC)
+gcloud auth login
+
+# 2. Deploy (takes 5–10 minutes)
+agents-cli deploy --project <GCP_PROJECT_ID> --region us-east1 --no-confirm-project
+```
+
+On success the CLI prints the Agent Runtime resource name and writes `deployment_metadata.json`. Use that resource name in the `agents-cli run` commands in the section below.
+
+```bash
+# Check deployment status if the command is interrupted
+agents-cli deploy --status
+
+# Tear down when done (no gcloud CLI for Agent Runtime — use REST API)
+TOKEN=$(gcloud auth print-access-token)
+RESOURCE_ID=<REASONING_ENGINE_ID_FROM_deployment_metadata.json>
+curl -s -X DELETE \
+  "https://us-east1-aiplatform.googleapis.com/v1/projects/<PROJECT_NUMBER>/locations/us-east1/reasoningEngines/${RESOURCE_ID}?force=true" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+> **Cost note:** Agent Runtime bills by vCPU-hour and memory-hour while the engine is active. Delete it when the demo is done.
+
 ### Evals
 
 ```bash
