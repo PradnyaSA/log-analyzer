@@ -620,40 +620,6 @@ def request_rca_approval(node_input, ctx: Context):  # type: ignore[no-untyped-d
 
 
 # ---------------------------------------------------------------------------
-# Action agent tools — Rovo MCP if ATLASSIAN_MCP_URL is set, else direct REST
-# ---------------------------------------------------------------------------
-
-_mcp_url = os.getenv("ATLASSIAN_MCP_URL", "")
-_atlassian_email = os.getenv("JIRA_USER_EMAIL", "")
-_atlassian_token = os.getenv("JIRA_API_TOKEN", "")
-
-_using_mcp = bool(_mcp_url and _atlassian_email and _atlassian_token)
-
-if _using_mcp:
-    from google.adk.tools.mcp_tool import McpToolset
-    from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnectionParams
-
-    _basic_auth = base64.b64encode(
-        f"{_atlassian_email}:{_atlassian_token}".encode()
-    ).decode()
-
-    _jira_toolset = McpToolset(
-        connection_params=StreamableHTTPConnectionParams(
-            url=_mcp_url,
-            headers={"Authorization": f"Basic {_basic_auth}"},
-        ),
-    )
-    _action_tools = [_jira_toolset, update_incident_status]
-else:
-    _action_tools = [file_jira_ticket, update_incident_status]
-
-_jira_instruction = (
-    "Use the available Jira MCP tool to create a Jira issue."
-    if _using_mcp
-    else "Call `file_jira_ticket` to create a Jira issue."
-)
-
-# ---------------------------------------------------------------------------
 # Action agent — executes write actions after HITL approval
 # ---------------------------------------------------------------------------
 
@@ -664,19 +630,19 @@ action_agent = Agent(
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
     mode="single_turn",
-    instruction=f"""You process the engineer's approval decision after an RCA review.
+    instruction="""You process the engineer's approval decision after an RCA review.
 
 The RCA report that was just produced is available below — use it to populate all tool arguments. Do NOT ask the engineer for any information.
 
 --- RCA REPORT ---
-{{rca_report}}
+{rca_report}
 --- END RCA REPORT ---
 
-Incident ID: {{incident_id}}
-Service: {{service_name}}
+Incident ID: {incident_id}
+Service: {service_name}
 
 If the decision is 'approve' or 'approved':
-1. {_jira_instruction} Use the incident ID, service name, root cause, evidence citations, and full RCA description extracted from the report above.
+1. Call `file_jira_ticket` using the incident ID, service name, root cause, evidence citations, and full RCA description extracted from the report above.
 2. Call `update_incident_status` with status='triage_completed' and the root cause as the resolution note.
 3. Confirm both actions and report the Jira ticket URL (or skipped status if not configured).
 
@@ -687,7 +653,7 @@ If the decision is 'reject' or 'rejected':
 
 Be concise and specific — report exactly what was done.
 """,
-    tools=_action_tools,
+    tools=[file_jira_ticket, update_incident_status],
 )
 
 
