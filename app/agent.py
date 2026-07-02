@@ -328,6 +328,8 @@ def file_jira_ticket(
         f"{description}\n\n"
         f"Evidence log lines:\n{log_citations}"
     )
+    jira_issue_type = os.getenv("JIRA_ISSUE_TYPE", "Task")
+    # Jira Cloud API v3: assignee requires accountId, not email — omit to avoid 400
     payload = json.dumps(
         {
             "fields": {
@@ -343,12 +345,7 @@ def file_jira_ticket(
                         }
                     ],
                 },
-                "issuetype": {"name": "Story"},
-                **(
-                    {"assignee": {"emailAddress": jira_assignee}}
-                    if jira_assignee
-                    else {}
-                ),
+                "issuetype": {"name": jira_issue_type},
             }
         }
     ).encode()
@@ -372,6 +369,9 @@ def file_jira_ticket(
                 "ticket_url": f"{jira_base}/browse/{ticket_key}",
                 "ticket_key": ticket_key,
             }
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        return {"status": "error", "http_status": exc.code, "reason": body, "incident_id": incident_id}
     except Exception as exc:
         return {"status": "error", "reason": str(exc), "incident_id": incident_id}
 
