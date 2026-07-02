@@ -54,13 +54,49 @@ agents-cli install
 agents-cli playground
 ```
 
-Send a Pub/Sub anomaly event as the prompt — the agent parses it, runs the RCA pipeline, then pauses for HITL approval:
+#### Demo beat 1 — below threshold, no action taken
+
+Spike (5%) is below threshold (15%). Agent logs "below threshold" and exits without RCA.
+
+```json
+{"subscription": "projects/my-project/subscriptions/audit-log-anomaly-alerts", "data": {"service_name": "concierge-agent", "error_pattern": "HTTP 404", "spike_percent": 5.0, "log_subscription": "audit-log-stream", "window_start": "2026-07-01T04:00:00Z", "window_end": "2026-07-01T04:10:00Z", "incident_id": "INC-2051", "threshold": 15.0}}
+```
+
+#### Demo beat 2 — HTTP 404 spike on concierge-agent (above threshold)
+
+Spike (20%) exceeds threshold (15%). Agent reads 8-entry log corpus, identifies `search_flights` returning `top_k=0` across all multi-leg routes due to vector cutoff misconfiguration, emits RCA report with line citations, then **pauses for HITL approval**.
 
 ```json
 {"subscription": "projects/my-project/subscriptions/audit-log-anomaly-alerts", "data": {"service_name": "concierge-agent", "error_pattern": "HTTP 404", "spike_percent": 20.0, "log_subscription": "audit-log-stream", "window_start": "2026-07-01T02:10:00Z", "window_end": "2026-07-01T02:20:00Z", "incident_id": "INC-2047", "threshold": 15.0}}
 ```
 
-When the HITL pause appears, type `approve` to file Jira + close the incident, or `reject` to dismiss.
+At the HITL pause, type `approve` to file Jira + close the incident, or `reject` to dismiss.
+
+#### Demo beat 3 — HTTP 500 spike on booking-service (above threshold)
+
+Spike (35%) exceeds threshold (15%). Agent reads 7-entry corpus, identifies DB connection pool exhausted (`max_pool_size=10`, `active_connections=10`), emits RCA with pool pressure warning citations, then **pauses for HITL approval**.
+
+```json
+{"subscription": "projects/my-project/subscriptions/audit-log-anomaly-alerts", "data": {"service_name": "booking-service", "error_pattern": "HTTP 500", "spike_percent": 35.0, "log_subscription": "booking-audit-log-stream", "window_start": "2026-07-01T08:00:00Z", "window_end": "2026-07-01T08:15:00Z", "incident_id": "INC-2055", "threshold": 15.0}}
+```
+
+### Testing against a deployed Agent Runtime endpoint
+
+```bash
+# Turn 1 — send the anomaly event (agent will pause at HITL and return a session ID)
+agents-cli run \
+  --url "https://<REGION>-aiplatform.googleapis.com/reasoningEngines/v1/<RESOURCE_NAME>" \
+  --mode a2a \
+  '<PAYLOAD_JSON>'
+
+# Turn 2 — resume the paused session with your decision
+agents-cli run "approve" \
+  --url "https://<REGION>-aiplatform.googleapis.com/reasoningEngines/v1/<RESOURCE_NAME>" \
+  --mode a2a \
+  --session-id <SESSION_ID_FROM_TURN_1>
+```
+
+Replace `<RESOURCE_NAME>` with the value from `deployment_metadata.json` after deploying (`agents-cli deploy --project <GCP_PROJECT_ID>`).
 
 ### Evals
 
