@@ -33,3 +33,70 @@ Compared to full-stack observability platforms (Splunk, Elastic, Datadog, Dynatr
 
 ---
 
+## Running Locally / Demo
+
+### Prerequisites
+
+```bash
+# 1. Install the agents CLI (one-time)
+uv tool install google-agents-cli
+
+# 2. Authenticate with GCP
+gcloud auth application-default login
+
+# 3. Install project dependencies
+agents-cli install
+```
+
+### Interactive playground (manual testing)
+
+```bash
+agents-cli playground
+```
+
+Send a Pub/Sub anomaly event as the prompt — the agent parses it, runs the RCA pipeline, then pauses for HITL approval:
+
+```json
+{"subscription": "projects/my-project/subscriptions/audit-log-anomaly-alerts", "data": {"service_name": "concierge-agent", "error_pattern": "HTTP 404", "spike_percent": 20.0, "log_subscription": "audit-log-stream", "window_start": "2026-07-01T02:10:00Z", "window_end": "2026-07-01T02:20:00Z", "incident_id": "INC-2047", "threshold": 15.0}}
+```
+
+When the HITL pause appears, type `approve` to file Jira + close the incident, or `reject` to dismiss.
+
+### Evals
+
+```bash
+# Generate traces (runs agent on all eval cases)
+EVAL_MODE=true agents-cli eval generate --project <GCP_PROJECT_ID>
+
+# Grade traces (runs all metrics)
+EVAL_MODE=true agents-cli eval grade --project <GCP_PROJECT_ID>
+
+# Or run both in one command
+EVAL_MODE=true agents-cli eval run --project <GCP_PROJECT_ID>
+```
+
+> `EVAL_MODE=true` bypasses the HITL pause so the inference runner can complete the full workflow.
+> Results land in `artifacts/traces/` and `artifacts/grade_results/`.
+
+### Unit / integration tests
+
+```bash
+uv run pytest tests/unit tests/integration
+```
+
+### Environment variables (optional — only needed for full Jira/incident write-back)
+
+| Variable | Purpose |
+|---|---|
+| `GOOGLE_CLOUD_PROJECT` | GCP project ID (auto-detected from ADC if not set) |
+| `JIRA_BASE_URL` | Jira instance URL for `file_jira_ticket` |
+| `JIRA_API_TOKEN` | Jira API token |
+| `JIRA_PROJECT_KEY` | Jira project key (default: `ENG`) |
+| `JIRA_ASSIGNEE_EMAIL` | Default Jira assignee |
+| `INCIDENT_API_URL` | Incident management API base URL |
+| `INCIDENT_API_TOKEN` | Incident API auth token |
+
+If Jira/incident vars are not set, those tools return `"status": "skipped"` — the RCA pipeline and HITL flow still work fully.
+
+---
+
