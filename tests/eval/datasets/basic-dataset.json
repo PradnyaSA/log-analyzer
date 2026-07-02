@@ -6,6 +6,7 @@
         "role": "user",
         "parts": [{"text": "{\"subscription\": \"projects/my-project/subscriptions/audit-log-anomaly-alerts\", \"data\": {\"service_name\": \"concierge-agent\", \"error_pattern\": \"HTTP 404\", \"spike_percent\": 20.0, \"log_subscription\": \"audit-log-stream\", \"window_start\": \"2026-07-01T02:10:00Z\", \"window_end\": \"2026-07-01T02:20:00Z\", \"incident_id\": \"INC-2047\", \"threshold\": 15.0}}"}]
       },
+      "rubric": "1. calls_read_log_window: The agent must call the read_log_window tool to fetch log entries before producing any analysis.\n2. calls_emit_rca_log: The agent must call the emit_rca_log tool after completing its analysis, with a non-empty root_cause argument.\n3. rca_contains_line_citation: The RCA report must cite at least one specific log line number (e.g. 'Log line 1247') with the exact log text as evidence. No finding may be stated without a citation.\n4. root_cause_is_specific: The root cause statement must identify a specific technical reason (e.g. top_k cutoff, config change, code path) — not a vague restatement of the error pattern.\n5. hitl_pause_requested: The agent must pause and request human approval before filing any Jira ticket or updating the incident status. The approval message should mention 'approve' and 'reject' options.",
       "rubric_groups": {
         "rca_rubrics": {
           "rubrics": [
@@ -39,6 +40,7 @@
         "role": "user",
         "parts": [{"text": "{\"subscription\": \"projects/my-project/subscriptions/audit-log-anomaly-alerts\", \"data\": {\"service_name\": \"concierge-agent\", \"error_pattern\": \"HTTP 404\", \"spike_percent\": 5.0, \"log_subscription\": \"audit-log-stream\", \"window_start\": \"2026-07-01T04:00:00Z\", \"window_end\": \"2026-07-01T04:10:00Z\", \"incident_id\": \"INC-2051\", \"threshold\": 15.0}}"}]
       },
+      "rubric": "1. no_rca_or_jira_action: Because the spike (5%) is below the threshold (15%), the agent must NOT call read_log_window, emit_rca_log, file_jira_ticket, or update_incident_status. It should exit early.\n2. below_threshold_acknowledged: The agent's output or logs must acknowledge that the anomaly was below threshold and that no action was taken, including the spike percent and threshold values.",
       "rubric_groups": {
         "rca_rubrics": {
           "rubrics": [
@@ -60,6 +62,7 @@
         "role": "user",
         "parts": [{"text": "{\"subscription\": \"projects/my-project/subscriptions/audit-log-anomaly-alerts\", \"data\": {\"service_name\": \"booking-service\", \"error_pattern\": \"HTTP 500\", \"spike_percent\": 35.0, \"log_subscription\": \"booking-audit-log-stream\", \"window_start\": \"2026-07-01T08:00:00Z\", \"window_end\": \"2026-07-01T08:15:00Z\", \"incident_id\": \"INC-2055\", \"threshold\": 15.0}}"}]
       },
+      "rubric": "1. calls_read_log_window: The agent must call the read_log_window tool with the correct log_subscription, window_start, window_end, and error_pattern from the anomaly event.\n2. rca_contains_line_citation: Every finding in the RCA report must be anchored to a specific log line number with the exact log text quoted.\n3. incident_id_in_report: The RCA report must reference the correct incident ID (INC-2055) and affected service (booking-service).\n4. confidence_stated: The RCA report must state a confidence level — 'high', 'medium', or 'low' — with a rationale.",
       "rubric_groups": {
         "rca_rubrics": {
           "rubrics": [
@@ -89,6 +92,7 @@
         "role": "user",
         "parts": [{"text": "this is not valid json { broken envelope ]"}]
       },
+      "rubric": "1. graceful_error_handling: When the Pub/Sub envelope is malformed or unparseable JSON, the agent must NOT crash or raise an unhandled exception. It must return a structured error message identifying the parsing failure.\n2. no_tool_calls_on_error: When the input is malformed, the agent must not attempt to call read_log_window, emit_rca_log, file_jira_ticket, or update_incident_status.",
       "rubric_groups": {
         "rca_rubrics": {
           "rubrics": [

@@ -5,7 +5,6 @@ metrics_to_run:
 
 custom_metrics:
   - name: rca_rubric_quality
-    rubric_group_name: rca_rubrics   # matches rubric_groups key in each eval case
     prompt_template: |
       You are an expert evaluator for an AI-powered incident root-cause analysis (RCA) agent.
       The agent receives anomaly events from a Pub/Sub stream, reads audit logs, and produces

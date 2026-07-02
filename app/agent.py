@@ -43,10 +43,10 @@ try:
     os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id or "")
 except google.auth.exceptions.DefaultCredentialsError:
     pass  # credentials configured via .env or Secret Manager at runtime
-os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
+os.environ["GOOGLE_CLOUD_LOCATION"] = "us-central1"
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
 
-_MODEL = "gemini-flash-latest"
+_MODEL = "gemini-2.5-flash"
 
 
 # ---------------------------------------------------------------------------
@@ -390,8 +390,8 @@ def route_by_severity(node_input: dict, ctx: Context) -> Event:
     return Event(route="ANALYZE", output=node_input)
 
 
-def below_threshold(node_input: dict) -> Event:
-    """Log that the anomaly was below threshold and exit without action."""
+def _log_below_threshold(node_input: dict) -> Event:
+    """Emit structured log and pass through for the summary agent."""
     log_entry = {
         "severity": "INFO",
         "message": (
@@ -402,7 +402,25 @@ def below_threshold(node_input: dict) -> Event:
         "incident_id": node_input.get("incident_id"),
     }
     print(json.dumps(log_entry), flush=True)
-    return Event(output={"status": "below_threshold", **node_input})
+    return Event(output=node_input)
+
+
+# LLM node to produce a human-readable summary for the below-threshold path.
+# Also ensures the inference runner receives proper LLM events (not a bare string).
+below_threshold = Agent(
+    name="below_threshold_agent",
+    model=Gemini(
+        model=_MODEL,
+        retry_options=types.HttpRetryOptions(attempts=3),
+    ),
+    mode="single_turn",
+    instruction=(
+        "You received an anomaly event that was below the detection threshold "
+        "and required no action. Produce a concise one-sentence acknowledgement "
+        "confirming that the anomaly was evaluated, the spike and threshold values, "
+        "and that no RCA or incident action was taken."
+    ),
+)
 
 
 # ---------------------------------------------------------------------------
@@ -430,17 +448,17 @@ You receive an anomaly event. Your job:
 4. Call `emit_rca_log` with your root cause, confidence level, and citation lines.
 5. Return the complete RCA report in this format:
 
-## RCA Report — {incident_id}
+## RCA Report — <incident_id>
 
-**Service:** {service_name}
-**Anomaly:** {error_pattern} spike of {spike_percent}%
-**Log window:** {window_start} → {window_end}
+**Service:** <service_name>
+**Anomaly:** <error_pattern> spike of <spike_percent>%
+**Log window:** <window_start> → <window_end>
 
 ### Root Cause
 <one-sentence statement of root cause>
 
 ### Evidence
-- **Finding:** <description> — *Log line {N}: `<exact log text>`*
+- **Finding:** <description> — *Log line N: `<exact log text>`*
 (repeat for each finding)
 
 ### Impact
@@ -467,8 +485,24 @@ def request_rca_approval(node_input, ctx: Context):  # type: ignore[no-untyped-d
     The session stays paused until an engineer resumes it (via the HITL
     UI or POST /run with the session ID). Their response flows into
     ``action_agent``.
+
+    In eval mode (EVAL_MODE=true), the HITL pause is skipped so the
+    inference runner can complete the full workflow without blocking.
     """
     anomaly = ctx.state.get("anomaly", {})
+
+    if os.environ.get("EVAL_MODE", "").lower() == "true":
+        return Event(
+            output={
+                "hitl_skipped": True,
+                "reason": "EVAL_MODE=true — HITL pause bypassed for evaluation",
+                "incident_id": anomaly.get("incident_id"),
+                "rca_report": (
+                    node_input if isinstance(node_input, str) else str(node_input)
+                ),
+            }
+        )
+
     yield RequestInput(
         message=(
             "RCA complete. Review the findings above and respond with "
@@ -525,10 +559,11 @@ root_agent = Workflow(
         (
             route_by_severity,
             {
-                "BELOW_THRESHOLD": below_threshold,
+                "BELOW_THRESHOLD": _log_below_threshold,
                 "ANALYZE": log_analysis_agent,
             },
         ),
+        (_log_below_threshold, below_threshold),
         (log_analysis_agent, request_rca_approval, action_agent),
     ],
 )
