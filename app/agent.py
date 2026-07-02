@@ -631,14 +631,14 @@ _using_mcp = bool(_mcp_url and _atlassian_email and _atlassian_token)
 
 if _using_mcp:
     from google.adk.tools.mcp_tool import McpToolset
-    from google.adk.tools.mcp_tool.mcp_session_manager import SseConnectionParams
+    from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnectionParams
 
     _basic_auth = base64.b64encode(
         f"{_atlassian_email}:{_atlassian_token}".encode()
     ).decode()
 
     _jira_toolset = McpToolset(
-        connection_params=SseConnectionParams(
+        connection_params=StreamableHTTPConnectionParams(
             url=_mcp_url,
             headers={"Authorization": f"Basic {_basic_auth}"},
         ),
