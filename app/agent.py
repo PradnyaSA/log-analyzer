@@ -103,49 +103,132 @@ def read_log_window(
     """
     # Production: pull messages from the Pub/Sub subscription within the time
     # window using google.cloud.pubsub_v1.SubscriberClient, filtered by
-    # error_pattern. Stub below enables local development without credentials.
-    stub_entries = [
+    # error_pattern. Stub corpus below varies by error_pattern and spike_percent
+    # to support realistic multi-scenario demos without live credentials.
+
+    # --- Scenario A: HTTP 404 spike on concierge-agent (search_flights top_k=0) ---
+    _404_corpus = [
+        {
+            "line": 1241,
+            "timestamp": "2026-07-01T02:11:03Z",
+            "level": "INFO",
+            "text": '[concierge-agent] tool=search_flights status=200 query="JFK→LHR" results=14 latency_ms=312',
+            "trace_id": "ab9001",
+        },
         {
             "line": 1247,
             "timestamp": "2026-07-01T02:13:44Z",
             "level": "ERROR",
-            "text": (
-                '[concierge-agent] tool=search_flights status=404 '
-                'query="NYC→LON→TYO" '
-                'error="No results: top_k=0 returned after vector cutoff"'
-            ),
+            "text": '[concierge-agent] tool=search_flights status=404 query="NYC→LON→TYO" error="No results: top_k=0 returned after vector cutoff" cutoff=0.92',
             "trace_id": "abc123",
         },
         {
             "line": 1251,
             "timestamp": "2026-07-01T02:13:51Z",
             "level": "ERROR",
-            "text": (
-                '[concierge-agent] tool=search_flights status=404 '
-                'query="LAX→CDG→NRT" '
-                'error="No results: top_k=0 returned after vector cutoff"'
-            ),
+            "text": '[concierge-agent] tool=search_flights status=404 query="LAX→CDG→NRT" error="No results: top_k=0 returned after vector cutoff" cutoff=0.92',
             "trace_id": "abc124",
+        },
+        {
+            "line": 1263,
+            "timestamp": "2026-07-01T02:14:29Z",
+            "level": "ERROR",
+            "text": '[concierge-agent] tool=search_flights status=404 query="BOS→MXP→SIN" error="No results: top_k=0 returned after vector cutoff" cutoff=0.92',
+            "trace_id": "abc127",
+        },
+        {
+            "line": 1271,
+            "timestamp": "2026-07-01T02:15:07Z",
+            "level": "WARNING",
+            "text": '[concierge-agent] high_error_rate detected: tool=search_flights error_rate=0.81 window=60s baseline=0.04',
+            "trace_id": "abc129",
         },
         {
             "line": 1289,
             "timestamp": "2026-07-01T02:17:12Z",
             "level": "ERROR",
-            "text": (
-                '[concierge-agent] tool=search_flights status=404 '
-                'query="SFO→FCO→BKK" '
-                'error="No results: top_k=0 returned after vector cutoff"'
-            ),
+            "text": '[concierge-agent] tool=search_flights status=404 query="SFO→FCO→BKK" error="No results: top_k=0 returned after vector cutoff" cutoff=0.92',
             "trace_id": "abc131",
         },
+        {
+            "line": 1302,
+            "timestamp": "2026-07-01T02:18:55Z",
+            "level": "ERROR",
+            "text": '[concierge-agent] tool=search_flights status=404 query="ORD→AMS→HKG" error="No results: top_k=0 returned after vector cutoff" cutoff=0.92',
+            "trace_id": "abc135",
+        },
+        {
+            "line": 1318,
+            "timestamp": "2026-07-01T02:19:41Z",
+            "level": "ERROR",
+            "text": '[concierge-agent] tool=search_flights status=404 query="DFW→ZRH→BOM" error="No results: top_k=0 returned after vector cutoff" cutoff=0.92',
+            "trace_id": "abc139",
+        },
     ]
+
+    # --- Scenario B: HTTP 500 spike on booking-service (DB connection pool exhausted) ---
+    _500_corpus = [
+        {
+            "line": 3102,
+            "timestamp": "2026-07-01T08:01:14Z",
+            "level": "INFO",
+            "text": '[booking-service] POST /api/v2/bookings status=200 user_id=u8821 latency_ms=204',
+            "trace_id": "bf0041",
+        },
+        {
+            "line": 3117,
+            "timestamp": "2026-07-01T08:02:38Z",
+            "level": "ERROR",
+            "text": '[booking-service] POST /api/v2/bookings status=500 error="connection pool exhausted: max_pool_size=10 active_connections=10 wait_timeout=30s"',
+            "trace_id": "bf0049",
+        },
+        {
+            "line": 3124,
+            "timestamp": "2026-07-01T08:02:51Z",
+            "level": "ERROR",
+            "text": '[booking-service] POST /api/v2/bookings status=500 error="connection pool exhausted: max_pool_size=10 active_connections=10 wait_timeout=30s"',
+            "trace_id": "bf0051",
+        },
+        {
+            "line": 3138,
+            "timestamp": "2026-07-01T08:03:22Z",
+            "level": "WARNING",
+            "text": '[booking-service] db_pool_pressure: active=10/10 queued_requests=47 avg_wait_ms=8340 — consider increasing max_pool_size or adding read replicas',
+            "trace_id": "bf0055",
+        },
+        {
+            "line": 3145,
+            "timestamp": "2026-07-01T08:03:44Z",
+            "level": "ERROR",
+            "text": '[booking-service] POST /api/v2/bookings status=500 error="connection pool exhausted: max_pool_size=10 active_connections=10 wait_timeout=30s"',
+            "trace_id": "bf0057",
+        },
+        {
+            "line": 3161,
+            "timestamp": "2026-07-01T08:04:19Z",
+            "level": "ERROR",
+            "text": '[booking-service] POST /api/v2/bookings status=500 error="connection pool exhausted: max_pool_size=10 active_connections=10 wait_timeout=30s"',
+            "trace_id": "bf0062",
+        },
+        {
+            "line": 3179,
+            "timestamp": "2026-07-01T08:05:03Z",
+            "level": "ERROR",
+            "text": '[booking-service] POST /api/v2/bookings status=500 error="connection pool exhausted: max_pool_size=10 active_connections=10 wait_timeout=30s"',
+            "trace_id": "bf0068",
+        },
+    ]
+
+    # Select corpus by error_pattern; caller controls depth via max_entries
+    corpus = _500_corpus if "500" in error_pattern else _404_corpus
+
     return {
         "status": "success",
         "subscription": log_subscription,
         "window": {"start": window_start, "end": window_end},
         "error_pattern": error_pattern,
-        "entries": stub_entries[:max_entries],
-        "total_count": len(stub_entries),
+        "entries": corpus[:max_entries],
+        "total_count": len(corpus),
     }
 
 
