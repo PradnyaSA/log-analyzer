@@ -310,13 +310,14 @@ def file_jira_ticket(
 
     jira_base = os.getenv("JIRA_BASE_URL", "")
     jira_token = os.getenv("JIRA_API_TOKEN", "")
+    jira_user = os.getenv("JIRA_USER_EMAIL", "")
     jira_project = os.getenv("JIRA_PROJECT_KEY", "ENG")
     jira_assignee = os.getenv("JIRA_ASSIGNEE_EMAIL", "")
 
-    if not jira_base or not jira_token:
+    if not jira_base or not jira_token or not jira_user:
         return {
             "status": "skipped",
-            "reason": "JIRA_BASE_URL and JIRA_API_TOKEN not configured",
+            "reason": "JIRA_BASE_URL, JIRA_USER_EMAIL, and JIRA_API_TOKEN not configured",
             "incident_id": incident_id,
         }
 
@@ -352,11 +353,13 @@ def file_jira_ticket(
         }
     ).encode()
 
+    import base64 as _b64
+    basic = _b64.b64encode(f"{jira_user}:{jira_token}".encode()).decode()
     req = urllib.request.Request(
         f"{jira_base}/rest/api/3/issue",
         data=payload,
         headers={
-            "Authorization": f"Bearer {jira_token}",
+            "Authorization": f"Basic {basic}",
             "Content-Type": "application/json",
         },
     )
