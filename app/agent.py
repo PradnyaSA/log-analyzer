@@ -30,6 +30,10 @@ import base64
 import json
 import os
 
+from dotenv import load_dotenv
+
+load_dotenv()  # loads .env from project root if present; no-op if absent
+
 import google.auth
 from google.adk import Agent, Context, Event, Workflow
 from google.adk.apps import App, ResumabilityConfig
@@ -38,13 +42,19 @@ from google.adk.models import Gemini
 from google.genai import types
 from pydantic import BaseModel, Field
 
-try:
-    _, project_id = google.auth.default()
-    os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id or "")
-except google.auth.exceptions.DefaultCredentialsError:
-    pass  # credentials configured via .env or Secret Manager at runtime
-os.environ["GOOGLE_CLOUD_LOCATION"] = "us-central1"
-os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
+if os.environ.get("GOOGLE_API_KEY"):
+    # Option B: Google AI Studio API key — no GCP project or credentials required.
+    # Get a free key at https://aistudio.google.com → API Keys → Create.
+    os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "False"
+else:
+    # Option C: Vertex AI — requires GCP credentials (gcloud auth application-default login).
+    try:
+        _, project_id = google.auth.default()
+        os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id or "")
+    except google.auth.exceptions.DefaultCredentialsError:
+        pass  # credentials configured via .env or Secret Manager at runtime
+    os.environ["GOOGLE_CLOUD_LOCATION"] = "us-central1"
+    os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
 
 _MODEL = "gemini-2.5-flash"
 
