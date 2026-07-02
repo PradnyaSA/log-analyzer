@@ -38,20 +38,39 @@ Compared to full-stack observability platforms (Splunk, Elastic, Datadog, Dynatr
 ### Prerequisites
 
 ```bash
-# 1. Install the agents CLI (one-time)
+# Install the agents CLI (one-time)
 uv tool install google-agents-cli
 
-# 2. Authenticate with GCP
-gcloud auth application-default login
-
-# 3. Install project dependencies
+# Install project dependencies
 agents-cli install
 ```
+
+Then choose how you want the agent to call the model:
+
+**Option B — no GCP, Google AI Studio API key** (recommended for local demo)
+
+Get a free key at https://aistudio.google.com → API Keys → Create, then export it:
+
+```bash
+export GOOGLE_API_KEY=<your_key>
+```
+
+**Option C — Vertex AI with GCP credentials**
+
+```bash
+gcloud auth application-default login
+```
+
+The agent auto-detects which mode to use: if `GOOGLE_API_KEY` is set it uses the Gemini API directly; otherwise it falls back to Vertex AI.
 
 ### Interactive playground (manual testing)
 
 ```bash
+# Option B — no GCP (GOOGLE_API_KEY already exported)
 agents-cli playground
+
+# Option C — Vertex AI
+GOOGLE_GENAI_USE_VERTEXAI=true agents-cli playground
 ```
 
 #### Demo beat 1 — below threshold, no action taken
@@ -80,10 +99,22 @@ Spike (35%) exceeds threshold (15%). Agent reads 7-entry corpus, identifies DB c
 {"subscription": "projects/my-project/subscriptions/audit-log-anomaly-alerts", "data": {"service_name": "booking-service", "error_pattern": "HTTP 500", "spike_percent": 35.0, "log_subscription": "booking-audit-log-stream", "window_start": "2026-07-01T08:00:00Z", "window_end": "2026-07-01T08:15:00Z", "incident_id": "INC-2055", "threshold": 15.0}}
 ```
 
+### Local HITL demo (playground — recommended for local runs)
+
+For the full approve/reject flow locally, use the playground — it keeps everything in one interactive session:
+
+```bash
+agents-cli playground
+```
+
+Paste the anomaly payload at the prompt. When the HITL pause appears, type `approve` or `reject` in the same session.
+
+> `agents-cli run --session-id` does **not** support HITL resume locally — `ResumabilityConfig` requires the managed session backend on Agent Runtime. Use the playground locally; use `agents-cli run --session-id` against a deployed endpoint.
+
 ### Testing against a deployed Agent Runtime endpoint
 
 ```bash
-# Turn 1 — send the anomaly event (agent will pause at HITL and return a session ID)
+# Turn 1 — send the anomaly event (agent runs RCA, pauses at HITL, returns session ID)
 agents-cli run \
   --url "https://<REGION>-aiplatform.googleapis.com/reasoningEngines/v1/<RESOURCE_NAME>" \
   --mode a2a \
