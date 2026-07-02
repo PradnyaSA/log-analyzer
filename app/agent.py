@@ -584,15 +584,21 @@ def request_rca_approval(node_input, ctx: Context):  # type: ignore[no-untyped-d
     """
     anomaly = ctx.state.get("anomaly", {})
 
+    rca_report = node_input if isinstance(node_input, str) else str(node_input)
+
+    # Store RCA and anomaly details in session state so action_agent can
+    # read them via ADK state injection without asking the user again.
+    ctx.state["rca_report"] = rca_report
+    ctx.state["incident_id"] = anomaly.get("incident_id", "")
+    ctx.state["service_name"] = anomaly.get("service_name", "")
+
     if os.environ.get("EVAL_MODE", "").lower() == "true":
         return Event(
             output={
                 "hitl_skipped": True,
                 "reason": "EVAL_MODE=true — HITL pause bypassed for evaluation",
                 "incident_id": anomaly.get("incident_id"),
-                "rca_report": (
-                    node_input if isinstance(node_input, str) else str(node_input)
-                ),
+                "rca_report": rca_report,
             }
         )
 
@@ -605,9 +611,7 @@ def request_rca_approval(node_input, ctx: Context):  # type: ignore[no-untyped-d
         payload={
             "incident_id": anomaly.get("incident_id"),
             "service_name": anomaly.get("service_name"),
-            "rca_report": (
-                node_input if isinstance(node_input, str) else str(node_input)
-            ),
+            "rca_report": rca_report,
         },
     )
 
@@ -625,10 +629,19 @@ action_agent = Agent(
     mode="single_turn",
     instruction="""You process the engineer's approval decision after an RCA review.
 
+The RCA report that was just produced is available below — use it to populate all tool arguments. Do NOT ask the engineer for any information.
+
+--- RCA REPORT ---
+{rca_report}
+--- END RCA REPORT ---
+
+Incident ID: {incident_id}
+Service: {service_name}
+
 If the decision is 'approve' or 'approved':
-1. Call `file_jira_ticket` with a concise summary and the full RCA including evidence citations.
+1. Call `file_jira_ticket` using the incident ID, service name, root cause, evidence citations, and full RCA description extracted from the report above.
 2. Call `update_incident_status` with status='triage_completed' and the root cause as the resolution note.
-3. Confirm both actions were taken and report the Jira ticket URL.
+3. Confirm both actions and report the Jira ticket URL (or skipped status if Jira is not configured).
 
 If the decision is 'reject' or 'rejected':
 1. Call `update_incident_status` with status='dismissed' and a note that the engineer reviewed and dismissed the RCA.
