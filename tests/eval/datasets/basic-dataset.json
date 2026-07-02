@@ -1,17 +1,107 @@
 {
   "eval_cases": [
     {
-      "eval_case_id": "greeting",
+      "eval_case_id": "rca_above_threshold_404_spike",
       "prompt": {
         "role": "user",
-        "parts": [{"text": "Hello, what can you help me with?"}]
+        "parts": [{"text": "{\"subscription\": \"projects/my-project/subscriptions/audit-log-anomaly-alerts\", \"data\": {\"service_name\": \"concierge-agent\", \"error_pattern\": \"HTTP 404\", \"spike_percent\": 20.0, \"log_subscription\": \"audit-log-stream\", \"window_start\": \"2026-07-01T02:10:00Z\", \"window_end\": \"2026-07-01T02:20:00Z\", \"incident_id\": \"INC-2047\", \"threshold\": 15.0}}"}]
+      },
+      "rubric_groups": {
+        "rca_rubrics": {
+          "rubrics": [
+            {
+              "rubric_id": "calls_read_log_window",
+              "content": {"property": {"description": "The agent must call the read_log_window tool to fetch log entries before producing any analysis."}}
+            },
+            {
+              "rubric_id": "calls_emit_rca_log",
+              "content": {"property": {"description": "The agent must call the emit_rca_log tool after completing its analysis, with a non-empty root_cause argument."}}
+            },
+            {
+              "rubric_id": "rca_contains_line_citation",
+              "content": {"property": {"description": "The RCA report must cite at least one specific log line number (e.g. 'Log line 1247') with the exact log text as evidence. No finding may be stated without a citation."}}
+            },
+            {
+              "rubric_id": "root_cause_is_specific",
+              "content": {"property": {"description": "The root cause statement must identify a specific technical reason (e.g. top_k cutoff, config change, code path) — not a vague restatement of the error pattern."}}
+            },
+            {
+              "rubric_id": "hitl_pause_requested",
+              "content": {"property": {"description": "The agent must pause and request human approval before filing any Jira ticket or updating the incident status. The approval message should mention 'approve' and 'reject' options."}}
+            }
+          ]
+        }
       }
     },
     {
-      "eval_case_id": "weather_query",
+      "eval_case_id": "rca_below_threshold_exits_early",
       "prompt": {
         "role": "user",
-        "parts": [{"text": "What's the weather like in San Francisco?"}]
+        "parts": [{"text": "{\"subscription\": \"projects/my-project/subscriptions/audit-log-anomaly-alerts\", \"data\": {\"service_name\": \"concierge-agent\", \"error_pattern\": \"HTTP 404\", \"spike_percent\": 5.0, \"log_subscription\": \"audit-log-stream\", \"window_start\": \"2026-07-01T04:00:00Z\", \"window_end\": \"2026-07-01T04:10:00Z\", \"incident_id\": \"INC-2051\", \"threshold\": 15.0}}"}]
+      },
+      "rubric_groups": {
+        "rca_rubrics": {
+          "rubrics": [
+            {
+              "rubric_id": "no_rca_or_jira_action",
+              "content": {"property": {"description": "Because the spike (5%) is below the threshold (15%), the agent must NOT call read_log_window, emit_rca_log, file_jira_ticket, or update_incident_status. It should exit early."}}
+            },
+            {
+              "rubric_id": "below_threshold_acknowledged",
+              "content": {"property": {"description": "The agent's output or logs must acknowledge that the anomaly was below threshold and that no action was taken, including the spike percent and threshold values."}}
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "rca_critical_spike_different_error",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "{\"subscription\": \"projects/my-project/subscriptions/audit-log-anomaly-alerts\", \"data\": {\"service_name\": \"booking-service\", \"error_pattern\": \"HTTP 500\", \"spike_percent\": 35.0, \"log_subscription\": \"booking-audit-log-stream\", \"window_start\": \"2026-07-01T08:00:00Z\", \"window_end\": \"2026-07-01T08:15:00Z\", \"incident_id\": \"INC-2055\", \"threshold\": 15.0}}"}]
+      },
+      "rubric_groups": {
+        "rca_rubrics": {
+          "rubrics": [
+            {
+              "rubric_id": "calls_read_log_window",
+              "content": {"property": {"description": "The agent must call the read_log_window tool with the correct log_subscription, window_start, window_end, and error_pattern from the anomaly event."}}
+            },
+            {
+              "rubric_id": "rca_contains_line_citation",
+              "content": {"property": {"description": "Every finding in the RCA report must be anchored to a specific log line number with the exact log text quoted."}}
+            },
+            {
+              "rubric_id": "incident_id_in_report",
+              "content": {"property": {"description": "The RCA report must reference the correct incident ID (INC-2055) and affected service (booking-service)."}}
+            },
+            {
+              "rubric_id": "confidence_stated",
+              "content": {"property": {"description": "The RCA report must state a confidence level — 'high', 'medium', or 'low' — with a rationale."}}
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "rca_malformed_pubsub_envelope",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "this is not valid json { broken envelope ]"}]
+      },
+      "rubric_groups": {
+        "rca_rubrics": {
+          "rubrics": [
+            {
+              "rubric_id": "graceful_error_handling",
+              "content": {"property": {"description": "When the Pub/Sub envelope is malformed or unparseable JSON, the agent must NOT crash or raise an unhandled exception. It must return a structured error message identifying the parsing failure."}}
+            },
+            {
+              "rubric_id": "no_tool_calls_on_error",
+              "content": {"property": {"description": "When the input is malformed, the agent must not attempt to call read_log_window, emit_rca_log, file_jira_ticket, or update_incident_status."}}
+            }
+          ]
+        }
       }
     }
   ]

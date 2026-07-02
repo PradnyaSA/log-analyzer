@@ -1,30 +1,114 @@
 metrics_to_run:
-  - custom_response_quality
+  - multi_turn_tool_use_quality   # built-in: checks tool selection and argument correctness
+  - rca_rubric_quality            # custom LLM: per-case rubric evaluation (citation, root cause, HITL)
+  - rca_tool_sequence             # custom code: verifies required tools were called in correct order
 
 custom_metrics:
-  - name: custom_response_quality
+  - name: rca_rubric_quality
+    rubric_group_name: rca_rubrics   # matches rubric_groups key in each eval case
     prompt_template: |
-      You are an expert quality assurance evaluator for an enterprise AI assistant. Your task is to evaluate the agent's final response given the user prompt and the full agent trace (for tool-call and reasoning context).
+      You are an expert evaluator for an AI-powered incident root-cause analysis (RCA) agent.
+      The agent receives anomaly events from a Pub/Sub stream, reads audit logs, and produces
+      grounded RCA reports with exact log-line citations before pausing for human approval.
 
-      Please grade the response quality on a scale of 1 to 5 according to the following criteria:
-      1 (Poor): The response fails to address the query, contains incorrect information, or is highly confusing.
-      2 (Below Average): The response partially addresses the query but has notable inaccuracies, gaps, or unclear structure.
-      3 (Acceptable): The response adequately answers the query but lacks depth, clear structure, or misses minor details.
-      4 (Good): The response is accurate, well-structured, and covers the query thoroughly with minor room for improvement.
-      5 (Excellent): The response is highly relevant, comprehensive, flawlessly accurate, and excellently structured.
+      Evaluate the agent's response against the rubric criteria below.
 
-      ### Target Evaluation:
-      User Prompt: {prompt}
-      Final Response: {response}
-      Full Agent Trace: {agent_data}
+      User Prompt (Pub/Sub anomaly event): {prompt}
+      Agent Final Response: {response}
+      Full Agent Trace (tool calls, intermediate steps): {agent_data}
+      Rubric criteria to evaluate: {rubric}
 
-      Return your evaluation as a valid JSON object matching this structure:
+      For each rubric criterion, determine whether the agent's behavior satisfies it.
+      A criterion is satisfied only if there is clear evidence in the trace or response — not
+      if it was merely possible or implied.
+
+      Return a valid JSON object:
       {
-        "score": <integer between 1 and 5>,
-        "explanation": "<detailed string explaining the rationale for the score assigned>"
+        "score": <float between 0.0 and 1.0, where 1.0 = all criteria fully satisfied>,
+        "explanation": "<per-criterion verdict: state which criteria passed and which failed, with evidence from the trace>"
       }
-  - name: agent_turn_count
+
+  - name: rca_tool_sequence
     custom_function: |
       def evaluate(instance):
-          turns = (instance.get("agent_data") or {}).get("turns", [])
-          return {'score': len(turns)}
+          """
+          Verifies that the expected tool call sequence occurred in the trace.
+
+          For above-threshold cases: read_log_window must be called before emit_rca_log.
+          For below-threshold cases: neither tool should be called.
+          For malformed cases: no tool calls should occur.
+          """
+          import json
+
+          agent_data = instance.get("agent_data") or {}
+          turns = agent_data.get("turns", [])
+
+          # Flatten all function_call parts across all events
+          tool_calls = []
+          for turn in turns:
+              for event in turn.get("events", []):
+                  content = event.get("content", {})
+                  for part in content.get("parts", []):
+                      fc = part.get("function_call")
+                      if fc:
+                          tool_calls.append(fc.get("name", ""))
+
+          case_id = instance.get("eval_case_id", "")
+
+          # Below-threshold and malformed cases: no tool calls expected
+          if "below_threshold" in case_id or "malformed" in case_id:
+              if tool_calls:
+                  return {
+                      "score": 0.0,
+                      "explanation": f"Expected no tool calls but found: {tool_calls}"
+                  }
+              return {
+                  "score": 1.0,
+                  "explanation": "Correct: no tool calls were made for this case."
+              }
+
+          # Above-threshold cases: read_log_window must be called before emit_rca_log
+          has_read = "read_log_window" in tool_calls
+          has_emit = "emit_rca_log" in tool_calls
+
+          if not has_read and not has_emit:
+              return {
+                  "score": 0.0,
+                  "explanation": "Neither read_log_window nor emit_rca_log was called."
+              }
+          if not has_read:
+              return {
+                  "score": 0.25,
+                  "explanation": "emit_rca_log was called but read_log_window was missing — analysis was not grounded in log data."
+              }
+          if not has_emit:
+              return {
+                  "score": 0.5,
+                  "explanation": "read_log_window was called but emit_rca_log was missing — RCA was not logged."
+              }
+
+          # Check order: read_log_window must come before emit_rca_log
+          read_idx = tool_calls.index("read_log_window")
+          emit_idx = tool_calls.index("emit_rca_log")
+          if read_idx > emit_idx:
+              return {
+                  "score": 0.5,
+                  "explanation": "emit_rca_log was called before read_log_window — wrong sequence."
+              }
+
+          # Check that file_jira_ticket and update_incident_status were NOT called
+          # (agent should pause for HITL before taking write actions)
+          premature_writes = [t for t in tool_calls if t in ("file_jira_ticket", "update_incident_status")]
+          if premature_writes:
+              return {
+                  "score": 0.5,
+                  "explanation": f"Agent called {premature_writes} without waiting for HITL approval."
+              }
+
+          return {
+              "score": 1.0,
+              "explanation": (
+                  f"Correct sequence: read_log_window (index {read_idx}) → "
+                  f"emit_rca_log (index {emit_idx}). No premature write actions."
+              )
+          }
