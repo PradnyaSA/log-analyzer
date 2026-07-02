@@ -1,0 +1,1539 @@
+{
+  "eval_case_results": [
+    {
+      "eval_case_index": 0,
+      "response_candidate_results": [
+        {
+          "response_index": 0,
+          "metric_results": {
+            "multi_turn_tool_use_quality_v1": {
+              "metric_name": "multi_turn_tool_use_quality_v1",
+              "score": 0.75,
+              "explanation": "",
+              "rubric_verdicts": [
+                {
+                  "evaluated_rubric": {
+                    "rubric_id": "8d2bda54",
+                    "content": {
+                      "property": {
+                        "description": "The agent calls the `log_analyzer` function to investigate the incident."
+                      }
+                    },
+                    "type": "",
+                    "importance": "HIGH"
+                  },
+                  "verdict": null,
+                  "reasoning": "Locate the relevant tool call(s) in the conversation history. In Turn 1, the agent calls `read_log_window` and `emit_rca_log`.\nStep 2: Compare the actual function name against the property requirement. The property specifies a function named `log_analyzer`. The agent called `read_log_window` for the investigation and `emit_rca_log` for the report.\nStep 3: Check for name match. No tool named `log_analyzer` was called. Although the agent's name in the tool definitions is listed as `log_analyzer`, the specific function names used in the dialogue do not match the requirement in the property."
+                },
+                {
+                  "evaluated_rubric": {
+                    "rubric_id": "799d29e8",
+                    "content": {
+                      "property": {
+                        "description": "The tool call adheres to the schema (valid JSON)."
+                      }
+                    },
+                    "type": "",
+                    "importance": "HIGH"
+                  },
+                  "verdict": true,
+                  "reasoning": "Locate the tool calls. In Turn 1, the agent calls `read_log_window` and `emit_rca_log`.\nStep 2: Check the formatting of the arguments.\n- `read_log_window({\"log_subscription\": \"audit-log-stream\", \"window_start\": \"2026-07-01T02:10:00Z\", \"max_entries\": 1000.0, \"error_pattern\": \"HTTP 404\", \"window_end\": \"2026-07-01T02:20:00Z\"})` is valid JSON.\n- `emit_rca_log({\"confidence\": \"high\", \"root_cause\": \"...\", \"citation_lines\": \"...\", \"service_name\": \"...\", \"incident_id\": \"...\", \"spike_percent\": 20.0})` is valid JSON (the internal quotes in the root_cause string are properly escaped).\nStep 3: The calls are technically correct."
+                },
+                {
+                  "evaluated_rubric": {
+                    "rubric_id": "8ddd5cf1",
+                    "content": {
+                      "property": {
+                        "description": "The arguments for the tool call explicitly include the incident ID 'INC-2047'."
+                      }
+                    },
+                    "type": "",
+                    "importance": "HIGH"
+                  },
+                  "verdict": true,
+                  "reasoning": "Locate the tool calls. In Turn 1, the agent calls `emit_rca_log`.\nStep 2: Check the arguments. The `emit_rca_log` call includes the parameter `incident_id` with the value `\"INC-2047\"`.\nStep 3: This is an exact match for the requirement."
+                },
+                {
+                  "evaluated_rubric": {
+                    "rubric_id": "31b9806f",
+                    "content": {
+                      "property": {
+                        "description": "The arguments for the tool call include context regarding 'HTTP 404 errors' and the need for a Root Cause Analysis (RCA) report."
+                      }
+                    },
+                    "type": "",
+                    "importance": "HIGH"
+                  },
+                  "verdict": true,
+                  "reasoning": "Locate the tool calls and their arguments.\nStep 2: In Turn 1, the `read_log_window` call uses `error_pattern=\"HTTP 404\"`. Additionally, the `emit_rca_log` call (which is the RCA report itself) contains a `root_cause` argument that explicitly mentions the errors \"resulting in HTTP 404s\".\nStep 3: The tool calls collectively (and specifically `emit_rca_log`) fulfill the semantic requirement for context regarding HTTP 404 errors and the root cause analysis."
+                }
+              ],
+              "raw_output": null,
+              "error_message": null
+            },
+            "rca_rubric_quality": {
+              "metric_name": "rca_rubric_quality",
+              "score": null,
+              "explanation": null,
+              "rubric_verdicts": null,
+              "raw_output": null,
+              "error_message": "400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': 'Error parsing JSON. Last error: Expecting \\',\\' delimiter: line 1 column 1578 (char 1577), Input: {   \"score\": 1.0,   \"explanation\": \"The agent\\'s behavior satisfies all rubric criteria.\\\\n\\\\n*   **calls_read_log_window**: Satisfied. The agent successfully called the `read_log_window` tool as its first action to retrieve log entries from the specified time window: `{\\'name\\': \\'read_log_window\\', \\'args\\': {\\'error_pattern\\': \\'HTTP 404\\', \\'window_end\\': \\'2026-07-01T02:20:00Z\\', \\'window_start\\': \\'2026-07-01T02:10:00Z\\', \\'max_entries\\': 1000.0, \\'log_subscription\\': \\'audit-log-stream\\'}}`.\\\\n\\\\n*   **calls_emit_rca_log**: Satisfied. After generating the RCA report, the agent called the `emit_rca_log` tool with a comprehensive `root_cause` argument: `{\\'name\\': \\'emit_rca_log\\', \\'args\\': {\\'service_name\\': \\'concierge-agent\\', \\'root_cause\\': \\'The `search_flights` tool is failing with \\\\\"No results: top_k=0 returned after vector cutoff\\\\\" errors due to an overly aggressive `cutoff=0.92` parameter, causing all searches to return no results and resulting in HTTP 404s.\\', \\'confidence\\': \\'high\\', \\'citation_lines\\': \\'1247, 1251, 1263, 1271, 1289, 1302, 1318\\', \\'spike_percent\\': 20.0, \\'incident_id\\': \\'INC-2047\\'}}`.\\\\n\\\\n*   **rca_contains_line_citation**: Satisfied. The RCA report provides multiple findings, each with a specific log line number and the exact log text as evidence. For example: `Log line 1247: `[concierge-agent] tool=search_flights status=404 query=\\\\\"NYC\u2192LON\u2192TYO\\\\\" error=\\\\\"No results: top_k=0 returned after vector cutoff\\\\\" cutoff=0.92``.\\\\n\\\\n*   **root_cause_is_specific**: Satisfied. The identified root cause is highly specific and technical: \\'The `search_flights` tool is failing with \"No results: top_k=0 returned after vector cutoff\" errors due to an overly aggressive `cutoff=0.92` parameter, causing all searches to return no results and resulting in HTTP 404s.\\' This pinpoints the exact parameter and its value causing the issue.\\\\n\\\\n*   **hitl_pause_requested**: Satisfied. The agent\\'s final response explicitly requests human approval and provides the options \\'approved\\' or \\'rejected\\': \\\\\"Please provide the engineer\\'s decision on the RCA for INC-2047. Was it approved or rejected?\\\\\"\\\\n\\\\n*   **endpoint_identified**: Satisfied. The RCA report clearly identifies the \\'`search_flights` tool\\' as the component experiencing the 404 errors, based directly on the log entries (`tool=search_flights`). While not a URL path, \\'tool=search_flights\\' represents the specific operational endpoint within the service that is failing, which is the most granular identification available from the provided logs.\" }', 'status': 'INVALID_ARGUMENT'}}"
+            },
+            "rca_tool_sequence": {
+              "metric_name": "rca_tool_sequence",
+              "score": 1.0,
+              "explanation": "Correct sequence: read_log_window (index 0) \u2192 emit_rca_log (index 1). No premature write actions.",
+              "rubric_verdicts": null,
+              "raw_output": null,
+              "error_message": null
+            }
+          }
+        }
+      ]
+    },
+    {
+      "eval_case_index": 1,
+      "response_candidate_results": [
+        {
+          "response_index": 0,
+          "metric_results": {
+            "multi_turn_tool_use_quality_v1": {
+              "metric_name": "multi_turn_tool_use_quality_v1",
+              "score": 0.0,
+              "explanation": "",
+              "rubric_verdicts": [
+                {
+                  "evaluated_rubric": {
+                    "rubric_id": "42233e51",
+                    "content": {
+                      "property": {
+                        "description": "The agent calls the `log_analyzer` function to evaluate the anomaly spike."
+                      }
+                    },
+                    "type": "",
+                    "importance": "HIGH"
+                  },
+                  "verdict": null,
+                  "reasoning": "Locate the relevant tool call(s) or user inputs in the conversation history.\nStep 2: Scan the conversation history for a tool call named `log_analyzer`.\nStep 3: No tool calls were made by the agent in the provided conversation history. The agent provided a text-only response."
+                },
+                {
+                  "evaluated_rubric": {
+                    "rubric_id": "71f665f9",
+                    "content": {
+                      "property": {
+                        "description": "The tool call adheres to the schema (valid JSON, all required parameters present)."
+                      }
+                    },
+                    "type": "",
+                    "importance": "HIGH"
+                  },
+                  "verdict": null,
+                  "reasoning": "Locate the relevant tool call(s) or user inputs in the conversation history.\nStep 2: Scan the conversation history for a tool call to validate against the schema.\nStep 3: No tool call was made; therefore, the agent failed to provide a valid schema-compliant call."
+                },
+                {
+                  "evaluated_rubric": {
+                    "rubric_id": "b9a0efb3",
+                    "content": {
+                      "property": {
+                        "description": "The arguments semantically match the user's intent to evaluate the anomaly spike, determine if it exceeds the threshold, and assess if Root Cause Analysis (RCA) or incident action is required."
+                      }
+                    },
+                    "type": "",
+                    "importance": "HIGH"
+                  },
+                  "verdict": null,
+                  "reasoning": "Locate the relevant tool call(s) or user inputs in the conversation history.\nStep 2: Scan the conversation history for a tool call and its associated arguments.\nStep 3: Since the `log_analyzer` tool was never called, there are no arguments to evaluate for semantic matching."
+                }
+              ],
+              "raw_output": null,
+              "error_message": null
+            },
+            "rca_rubric_quality": {
+              "metric_name": "rca_rubric_quality",
+              "score": 1.0,
+              "explanation": "All criteria are satisfied:\n\n1.  **no_rca_or_jira_action:** The `Full Agent Trace` shows only the final output from the `below_threshold_agent` and no tool calls were made. Specifically, there is no evidence of calls to `read_log_window`, `emit_rca_log`, `file_jira_ticket`, or `update_incident_status`. This indicates the agent correctly exited early without taking further action.\n\n2.  **below_threshold_acknowledged:** The `Agent Final Response` explicitly states: 'Anomaly evaluated: the 5.0% spike was below the 15.0% threshold, therefore no RCA or incident action was taken.' This clearly acknowledges that the anomaly was below the threshold, includes the specific spike percent (5.0%) and threshold value (15.0%), and confirms that no action was taken.",
+              "rubric_verdicts": null,
+              "raw_output": null,
+              "error_message": null
+            },
+            "rca_tool_sequence": {
+              "metric_name": "rca_tool_sequence",
+              "score": 1.0,
+              "explanation": "Correct: no tool calls were made for this case.",
+              "rubric_verdicts": null,
+              "raw_output": null,
+              "error_message": null
+            }
+          }
+        }
+      ]
+    },
+    {
+      "eval_case_index": 2,
+      "response_candidate_results": [
+        {
+          "response_index": 0,
+          "metric_results": {
+            "multi_turn_tool_use_quality_v1": {
+              "metric_name": "multi_turn_tool_use_quality_v1",
+              "score": 1.0,
+              "explanation": "",
+              "rubric_verdicts": [
+                {
+                  "evaluated_rubric": {
+                    "rubric_id": "bb872ea0",
+                    "content": {
+                      "property": {
+                        "description": "The agent calls the appropriate log retrieval function (e.g., `retrieve_logs`, `get_log_events`, or equivalent) to investigate the errors."
+                      }
+                    },
+                    "type": "",
+                    "importance": "HIGH"
+                  },
+                  "verdict": true,
+                  "reasoning": "Locate the relevant tool call in the conversation history. In AGENT (log_analysis_agent) TURN 1, the agent calls `read_log_window`.\nStep 2: Compare the actual function name against the property requirements. `read_log_window` is a function used for retrieving logs based on a specific window and pattern.\nStep 3: Check for validity. The tool call is appropriate for investigating errors."
+                },
+                {
+                  "evaluated_rubric": {
+                    "rubric_id": "4118fcac",
+                    "content": {
+                      "property": {
+                        "description": "The log retrieval tool call adheres to the schema (valid JSON, all required parameters present)."
+                      }
+                    },
+                    "type": "",
+                    "importance": "HIGH"
+                  },
+                  "verdict": true,
+                  "reasoning": "Locate the `read_log_window` call in AGENT TURN 1.\nStep 2: Check the arguments: `{\"max_entries\": 100.0, \"error_pattern\": \"HTTP 500\", \"window_start\": \"2026-07-01T08:00:00Z\", \"window_end\": \"2026-07-01T08:15:00Z\", \"log_subscription\": \"booking-audit-log-stream\"}`.\nStep 3: The call uses valid JSON and provides parameters expected for a log retrieval tool."
+                },
+                {
+                  "evaluated_rubric": {
+                    "rubric_id": "55365dc4",
+                    "content": {
+                      "property": {
+                        "description": "The stream or log group parameter is exactly set to 'booking-audit-log-stream'."
+                      }
+                    },
+                    "type": "",
+                    "importance": "HIGH"
+                  },
+                  "verdict": true,
+                  "reasoning": "Locate the `read_log_window` call in AGENT TURN 1.\nStep 2: Check the `log_subscription` argument. It is set to \"booking-audit-log-stream\".\nStep 3: This is an exact match."
+                },
+                {
+                  "evaluated_rubric": {
+                    "rubric_id": "c49c5b72",
+                    "content": {
+                      "property": {
+                        "description": "The time range parameters (start and end times) specify the window between 2026-07-01T08:00:00Z and 2026-07-01T08:15:00Z."
+                      }
+                    },
+                    "type": "",
+                    "importance": "HIGH"
+                  },
+                  "verdict": true,
+                  "reasoning": "Locate the `read_log_window` call in AGENT TURN 1.\nStep 2: Check `window_start` and `window_end`. They are \"2026-07-01T08:00:00Z\" and \"2026-07-01T08:15:00Z\" respectively.\nStep 3: These are exact matches."
+                },
+                {
+                  "evaluated_rubric": {
+                    "rubric_id": "ca5f0fe1",
+                    "content": {
+                      "property": {
+                        "description": "If a query or filter parameter is provided, it semantically targets HTTP 500 errors (alternatively, the agent may retrieve all logs in the timeframe and filter them internally)."
+                      }
+                    },
+                    "type": "",
+                    "importance": "MEDIUM"
+                  },
+                  "verdict": true,
+                  "reasoning": "Locate the `read_log_window` call in AGENT TURN 1.\nStep 2: The agent provided the `error_pattern` argument with the value \"HTTP 500\".\nStep 3: This semantically and exactly targets HTTP 500 errors."
+                },
+                {
+                  "evaluated_rubric": {
+                    "rubric_id": "c2a7850a",
+                    "content": {
+                      "property": {
+                        "description": "The agent calls the appropriate RCA emission function (e.g., `emit_rca_report`, `create_rca`, or equivalent) to file the report."
+                      }
+                    },
+                    "type": "",
+                    "importance": "HIGH"
+                  },
+                  "verdict": true,
+                  "reasoning": "Locate the relevant tool call in the conversation history. In AGENT (log_analysis_agent) TURN 1, the agent calls `emit_rca_log`.\nStep 2: `emit_rca_log` is a function designed for emitting an RCA report.\nStep 3: The call appears valid."
+                },
+                {
+                  "evaluated_rubric": {
+                    "rubric_id": "245fe601",
+                    "content": {
+                      "property": {
+                        "description": "The RCA emission tool call adheres to the schema (valid JSON, all required parameters present)."
+                      }
+                    },
+                    "type": "",
+                    "importance": "HIGH"
+                  },
+                  "verdict": true,
+                  "reasoning": "Locate the `emit_rca_log` call in AGENT TURN 1.\nStep 2: The arguments are `{\"spike_percent\": 35.0, \"confidence\": \"high\", \"incident_id\": \"INC-2055\", \"root_cause\": \"...\", \"citation_lines\": \"3117,3138\", \"service_name\": \"booking-service\"}`.\nStep 3: The JSON is valid and includes the necessary parameters to define an RCA."
+                },
+                {
+                  "evaluated_rubric": {
+                    "rubric_id": "6707a364",
+                    "content": {
+                      "property": {
+                        "description": "The incident ID parameter is exactly set to 'INC-2055'."
+                      }
+                    },
+                    "type": "",
+                    "importance": "HIGH"
+                  },
+                  "verdict": true,
+                  "reasoning": "Locate the `emit_rca_log` call in AGENT TURN 1.\nStep 2: The `incident_id` argument is \"INC-2055\".\nStep 3: This is an exact match."
+                },
+                {
+                  "evaluated_rubric": {
+                    "rubric_id": "30193ae6",
+                    "content": {
+                      "property": {
+                        "description": "The report content or body parameter incorporates the root cause findings derived from the results of the previous log retrieval tool call."
+                      }
+                    },
+                    "type": "",
+                    "importance": "HIGH"
+                  },
+                  "verdict": true,
+                  "reasoning": "Examine the output of the `read_log_window` call (USER TURN 1). It contains logs showing \"connection pool exhausted: max_pool_size=10\" (line 3117) and \"db_pool_pressure: active=10/10\" (line 3138).\nStep 2: Examine the `root_cause` argument in the `emit_rca_log` call. It states: \"The booking-service's database connection pool is undersized (max_pool_size=10), leading to connection exhaustion...\". It also uses `citation_lines`: \"3117,3138\".\nStep 3: The report content directly incorporates findings from the log retrieval tool."
+                }
+              ],
+              "raw_output": null,
+              "error_message": null
+            },
+            "rca_rubric_quality": {
+              "metric_name": "rca_rubric_quality",
+              "score": 1.0,
+              "explanation": "All criteria are satisfied.\n\n1.  **calls_read_log_window**: The agent successfully called the `read_log_window` tool with the correct parameters: `log_subscription='booking-audit-log-stream'`, `window_start='2026-07-01T08:00:00Z'`, `window_end='2026-07-01T08:15:00Z'`, and `error_pattern='HTTP 500'`, all derived from the initial anomaly event.\n    *Evidence: `{'function_call': {'name': 'read_log_window', 'args': {'log_subscription': 'booking-audit-log-stream', 'window_end': '2026-07-01T08:15:00Z', 'window_start': '2026-07-01T08:00:00Z', 'max_entries': 100.0, 'error_pattern': 'HTTP 500'}}}`*\n\n2.  **rca_contains_line_citation**: Each finding in the generated RCA report's 'Evidence' section includes a specific log line number and the exact log text quoted.\n    *Evidence: \n    - `Log line 3117: `[booking-service] POST /api/v2/bookings status=500 error=\"connection pool exhausted: max_pool_size=10 active_connections=10 wait_timeout=30s\"``\n    - `Log line 3138: `[booking-service] db_pool_pressure: active=10/10 queued_requests=47 avg_wait_ms=8340 \u2014 consider increasing max_pool_size or adding read replicas```*\n\n3.  **incident_id_in_report**: The RCA report clearly references the `incident_id` 'INC-2055' and the `service_name` 'booking-service'.\n    *Evidence: `## RCA Report \u2014 INC-2055` and `**Service:** booking-service` in the report title and header.*\n\n4.  **confidence_stated**: The RCA report explicitly states a confidence level as 'high'.\n    *Evidence: `**Confidence:** high` at the end of the RCA report.*\n",
+              "rubric_verdicts": null,
+              "raw_output": null,
+              "error_message": null
+            },
+            "rca_tool_sequence": {
+              "metric_name": "rca_tool_sequence",
+              "score": 1.0,
+              "explanation": "Correct sequence: read_log_window (index 0) \u2192 emit_rca_log (index 1). No premature write actions.",
+              "rubric_verdicts": null,
+              "raw_output": null,
+              "error_message": null
+            }
+          }
+        }
+      ]
+    },
+    {
+      "eval_case_index": 3,
+      "response_candidate_results": [
+        {
+          "response_index": 0,
+          "metric_results": {
+            "multi_turn_tool_use_quality_v1": {
+              "metric_name": "multi_turn_tool_use_quality_v1",
+              "score": 0.0,
+              "explanation": "",
+              "rubric_verdicts": null,
+              "raw_output": null,
+              "error_message": null
+            },
+            "rca_rubric_quality": {
+              "metric_name": "rca_rubric_quality",
+              "score": 0.5,
+              "explanation": "Criterion 1 (graceful_error_handling) failed: The agent did not crash, which is good, but it did not return a structured error message identifying the parsing failure. Instead, it produced a response indicating an 'anomaly evaluation' ('The anomaly was evaluated, showing a spike of 0.5 below the threshold of 1.0, and no RCA or incident action was required.'), which implies it hallucinated or incorrectly processed the malformed input as a valid scenario, rather than reporting a parsing error.\n\nCriterion 2 (no_tool_calls_on_error) passed: The agent trace shows no tool calls were attempted. The trace only includes a final response from the 'below_threshold_agent', with no evidence of calls to `read_log_window`, `emit_rca_log`, `file_jira_ticket`, or `update_incident_status`.",
+              "rubric_verdicts": null,
+              "raw_output": null,
+              "error_message": null
+            },
+            "rca_tool_sequence": {
+              "metric_name": "rca_tool_sequence",
+              "score": 1.0,
+              "explanation": "Correct: no tool calls were made for this case.",
+              "rubric_verdicts": null,
+              "raw_output": null,
+              "error_message": null
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "summary_metrics": [
+    {
+      "metric_name": "multi_turn_tool_use_quality_v1",
+      "num_cases_total": 4,
+      "num_cases_valid": 4,
+      "num_cases_error": 0,
+      "mean_score": 0.4375,
+      "stdev_score": 0.5153882032022076,
+      "pass_rate": 0.25
+    },
+    {
+      "metric_name": "rca_rubric_quality",
+      "num_cases_total": 4,
+      "num_cases_valid": 3,
+      "num_cases_error": 1,
+      "mean_score": 0.8333333333333334,
+      "stdev_score": 0.28867513459481287,
+      "pass_rate": null
+    },
+    {
+      "metric_name": "rca_tool_sequence",
+      "num_cases_total": 4,
+      "num_cases_valid": 4,
+      "num_cases_error": 0,
+      "mean_score": 1.0,
+      "stdev_score": 0.0,
+      "pass_rate": null
+    }
+  ],
+  "win_rates": null,
+  "evaluation_dataset": [
+    {
+      "bigquery_source": null,
+      "gcs_source": null,
+      "eval_cases": [
+        {
+          "prompt": {
+            "parts": [
+              {
+                "media_resolution": null,
+                "code_execution_result": null,
+                "executable_code": null,
+                "file_data": null,
+                "function_call": null,
+                "function_response": null,
+                "inline_data": null,
+                "text": "{\"subscription\": \"projects/my-project/subscriptions/audit-log-anomaly-alerts\", \"data\": {\"service_name\": \"concierge-agent\", \"error_pattern\": \"HTTP 404\", \"spike_percent\": 20.0, \"log_subscription\": \"audit-log-stream\", \"window_start\": \"2026-07-01T02:10:00Z\", \"window_end\": \"2026-07-01T02:20:00Z\", \"incident_id\": \"INC-2047\", \"threshold\": 15.0}}",
+                "thought": null,
+                "thought_signature": null,
+                "video_metadata": null,
+                "tool_call": null,
+                "tool_response": null,
+                "part_metadata": null
+              }
+            ],
+            "role": "user"
+          },
+          "responses": [
+            {
+              "response": {
+                "parts": [
+                  {
+                    "media_resolution": null,
+                    "code_execution_result": null,
+                    "executable_code": null,
+                    "file_data": null,
+                    "function_call": null,
+                    "function_response": null,
+                    "inline_data": null,
+                    "text": "Please provide the engineer's decision on the RCA for INC-2047. Was it approved or rejected?",
+                    "thought": null,
+                    "thought_signature": null,
+                    "video_metadata": null,
+                    "tool_call": null,
+                    "tool_response": null,
+                    "part_metadata": null
+                  }
+                ],
+                "role": "model"
+              }
+            }
+          ],
+          "reference": null,
+          "system_instruction": null,
+          "conversation_history": null,
+          "rubric_groups": {
+            "rca_rubrics": {
+              "group_id": null,
+              "display_name": null,
+              "rubrics": [
+                {
+                  "rubric_id": "calls_read_log_window",
+                  "content": {
+                    "property": {
+                      "description": "The agent must call the read_log_window tool to fetch log entries before producing any analysis."
+                    }
+                  },
+                  "type": null,
+                  "importance": null
+                },
+                {
+                  "rubric_id": "calls_emit_rca_log",
+                  "content": {
+                    "property": {
+                      "description": "The agent must call the emit_rca_log tool after completing its analysis, with a non-empty root_cause argument."
+                    }
+                  },
+                  "type": null,
+                  "importance": null
+                },
+                {
+                  "rubric_id": "rca_contains_line_citation",
+                  "content": {
+                    "property": {
+                      "description": "The RCA report must cite at least one specific log line number (e.g. 'Log line 1247') with the exact log text as evidence. No finding may be stated without a citation."
+                    }
+                  },
+                  "type": null,
+                  "importance": null
+                },
+                {
+                  "rubric_id": "root_cause_is_specific",
+                  "content": {
+                    "property": {
+                      "description": "The root cause statement must identify a specific technical reason (e.g. top_k cutoff, config change, code path) \u2014 not a vague restatement of the error pattern."
+                    }
+                  },
+                  "type": null,
+                  "importance": null
+                },
+                {
+                  "rubric_id": "hitl_pause_requested",
+                  "content": {
+                    "property": {
+                      "description": "The agent must pause and request human approval before filing any Jira ticket or updating the incident status. The approval message should mention 'approve' and 'reject' options."
+                    }
+                  },
+                  "type": null,
+                  "importance": null
+                },
+                {
+                  "rubric_id": "endpoint_identified",
+                  "content": {
+                    "property": {
+                      "description": "The RCA report must name the specific endpoint(s) (e.g. URL path or route) producing the 404 errors, as discovered from log line evidence \u2014 not inferred or assumed."
+                    }
+                  },
+                  "type": null,
+                  "importance": null
+                }
+              ]
+            }
+          },
+          "eval_case_id": "rca_above_threshold_404_spike",
+          "intermediate_events": null,
+          "agent_info": null,
+          "agent_data": {
+            "agents": {
+              "log_analyzer": {
+                "agent_id": "log_analyzer",
+                "agent_type": "Workflow",
+                "description": "",
+                "instruction": null,
+                "tools": [],
+                "sub_agents": []
+              }
+            },
+            "turns": [
+              {
+                "turn_index": 0,
+                "turn_id": "turn_0",
+                "events": [
+                  {
+                    "author": "log_analysis_agent",
+                    "content": {
+                      "parts": [
+                        {
+                          "media_resolution": null,
+                          "code_execution_result": null,
+                          "executable_code": null,
+                          "file_data": null,
+                          "function_call": {
+                            "id": "adk-7a7f3f74-4af1-4ebc-bef3-7e4bfa666dc2",
+                            "args": {
+                              "max_entries": 1000,
+                              "window_start": "2026-07-01T02:10:00Z",
+                              "log_subscription": "audit-log-stream",
+                              "error_pattern": "HTTP 404",
+                              "window_end": "2026-07-01T02:20:00Z"
+                            },
+                            "name": "read_log_window",
+                            "partial_args": null,
+                            "will_continue": null
+                          },
+                          "function_response": null,
+                          "inline_data": null,
+                          "text": null,
+                          "thought": null,
+                          "thought_signature": null,
+                          "video_metadata": null,
+                          "tool_call": null,
+                          "tool_response": null,
+                          "part_metadata": null
+                        }
+                      ],
+                      "role": "model"
+                    },
+                    "event_time": null,
+                    "state_delta": null,
+                    "active_tools": null
+                  },
+                  {
+                    "author": "log_analysis_agent",
+                    "content": {
+                      "parts": [
+                        {
+                          "media_resolution": null,
+                          "code_execution_result": null,
+                          "executable_code": null,
+                          "file_data": null,
+                          "function_call": null,
+                          "function_response": {
+                            "will_continue": null,
+                            "scheduling": null,
+                            "parts": null,
+                            "id": "adk-7a7f3f74-4af1-4ebc-bef3-7e4bfa666dc2",
+                            "name": "read_log_window",
+                            "response": {
+                              "status": "success",
+                              "subscription": "audit-log-stream",
+                              "window": {
+                                "start": "2026-07-01T02:10:00Z",
+                                "end": "2026-07-01T02:20:00Z"
+                              },
+                              "error_pattern": "HTTP 404",
+                              "entries": [
+                                {
+                                  "line": 1241,
+                                  "timestamp": "2026-07-01T02:11:03Z",
+                                  "level": "INFO",
+                                  "text": "[concierge-agent] tool=search_flights status=200 query=\"JFK\u2192LHR\" results=14 latency_ms=312",
+                                  "trace_id": "ab9001"
+                                },
+                                {
+                                  "line": 1247,
+                                  "timestamp": "2026-07-01T02:13:44Z",
+                                  "level": "ERROR",
+                                  "text": "[concierge-agent] tool=search_flights status=404 query=\"NYC\u2192LON\u2192TYO\" error=\"No results: top_k=0 returned after vector cutoff\" cutoff=0.92",
+                                  "trace_id": "abc123"
+                                },
+                                {
+                                  "line": 1251,
+                                  "timestamp": "2026-07-01T02:13:51Z",
+                                  "level": "ERROR",
+                                  "text": "[concierge-agent] tool=search_flights status=404 query=\"LAX\u2192CDG\u2192NRT\" error=\"No results: top_k=0 returned after vector cutoff\" cutoff=0.92",
+                                  "trace_id": "abc124"
+                                },
+                                {
+                                  "line": 1263,
+                                  "timestamp": "2026-07-01T02:14:29Z",
+                                  "level": "ERROR",
+                                  "text": "[concierge-agent] tool=search_flights status=404 query=\"BOS\u2192MXP\u2192SIN\" error=\"No results: top_k=0 returned after vector cutoff\" cutoff=0.92",
+                                  "trace_id": "abc127"
+                                },
+                                {
+                                  "line": 1271,
+                                  "timestamp": "2026-07-01T02:15:07Z",
+                                  "level": "WARNING",
+                                  "text": "[concierge-agent] high_error_rate detected: tool=search_flights error_rate=0.81 window=60s baseline=0.04",
+                                  "trace_id": "abc129"
+                                },
+                                {
+                                  "line": 1289,
+                                  "timestamp": "2026-07-01T02:17:12Z",
+                                  "level": "ERROR",
+                                  "text": "[concierge-agent] tool=search_flights status=404 query=\"SFO\u2192FCO\u2192BKK\" error=\"No results: top_k=0 returned after vector cutoff\" cutoff=0.92",
+                                  "trace_id": "abc131"
+                                },
+                                {
+                                  "line": 1302,
+                                  "timestamp": "2026-07-01T02:18:55Z",
+                                  "level": "ERROR",
+                                  "text": "[concierge-agent] tool=search_flights status=404 query=\"ORD\u2192AMS\u2192HKG\" error=\"No results: top_k=0 returned after vector cutoff\" cutoff=0.92",
+                                  "trace_id": "abc135"
+                                },
+                                {
+                                  "line": 1318,
+                                  "timestamp": "2026-07-01T02:19:41Z",
+                                  "level": "ERROR",
+                                  "text": "[concierge-agent] tool=search_flights status=404 query=\"DFW\u2192ZRH\u2192BOM\" error=\"No results: top_k=0 returned after vector cutoff\" cutoff=0.92",
+                                  "trace_id": "abc139"
+                                }
+                              ],
+                              "total_count": 8
+                            }
+                          },
+                          "inline_data": null,
+                          "text": null,
+                          "thought": null,
+                          "thought_signature": null,
+                          "video_metadata": null,
+                          "tool_call": null,
+                          "tool_response": null,
+                          "part_metadata": null
+                        }
+                      ],
+                      "role": "user"
+                    },
+                    "event_time": null,
+                    "state_delta": null,
+                    "active_tools": null
+                  },
+                  {
+                    "author": "log_analysis_agent",
+                    "content": {
+                      "parts": [
+                        {
+                          "media_resolution": null,
+                          "code_execution_result": null,
+                          "executable_code": null,
+                          "file_data": null,
+                          "function_call": null,
+                          "function_response": null,
+                          "inline_data": null,
+                          "text": "## RCA Report \u2014 INC-2047\n\n**Service:** concierge-agent\n**Anomaly:** HTTP 404 spike of 20.0%\n**Log window:** 2026-07-01T02:10:00Z \u2192 2026-07-01T02:20:00Z\n\n### Root Cause\nThe `search_flights` tool is failing with \"No results: top_k=0 returned after vector cutoff\" errors due to an overly aggressive `cutoff=0.92` parameter, causing all searches to return no results and resulting in HTTP 404s.\n\n### Evidence\n- **Finding:** All observed HTTP 404 errors stem from the `search_flights` tool reporting \"No results: top_k=0 returned after vector cutoff\" with a specific `cutoff=0.92`. \u2014 *Log line 1247: `[concierge-agent] tool=search_flights status=404 query=\"NYC\u2192LON\u2192TYO\" error=\"No results: top_k=0 returned after vector cutoff\" cutoff=0.92`*\n- **Finding:** Consistent `cutoff=0.92` parameter across all failing flight search requests. \u2014 *Log line 1251: `[concierge-agent] tool=search_flights status=404 query=\"LAX\u2192CDG\u2192NRT\" error=\"No results: top_k=0 returned after vector cutoff\" cutoff=0.92`*\n- **Finding:** The system detected a high error rate specifically for the `search_flights` tool. \u2014 *Log line 1271: `[concierge-agent] high_error_rate detected: tool=search_flights error_rate=0.81 window=60s baseline=0.04`*\n- **Finding:** Multiple distinct queries are failing with the exact same error and cutoff value. \u2014 *Log line 1263: `[concierge-agent] tool=search_flights status=404 query=\"BOS\u2192MXP\u2192SIN\" error=\"No results: top_k=0 returned after vector cutoff\" cutoff=0.92`*\n- **Finding:** All 404 errors are linked to the `search_flights` tool and the \"No results\" error with cutoff 0.92. \u2014 *Log line 1289: `[concierge-agent] tool=search_flights status=404 query=\"SFO\u2192FCO\u2192BKK\" error=\"No results: top_k=0 returned after vector cutoff\" cutoff=0.92`*\n- **Finding:** Continued occurrences of the same error pattern confirm its prevalence. \u2014 *Log line 1302: `[concierge-agent] tool=search_flights status=404 query=\"ORD\u2192AMS\u2192HKG\" error=\"No results: top_k=0 returned after vector cutoff\" cutoff=0.92`*\n- **Finding:** The problem persists throughout the log window, indicating an ongoing issue. \u2014 *Log line 1318: `[concierge-agent] tool=search_flights status=404 query=\"DFW\u2192ZRH\u2192BOM\" error=\"No results: top_k=0 returned after vector cutoff\" cutoff=0.92`*\n\n### Impact\nUsers are unable to successfully search for flights, leading to a broken user experience and potential loss of business.\n\n### Recommended Fix\nInvestigate the recent change that introduced the `cutoff=0.92` parameter in the `search_flights` tool. Revert this change or adjust the `cutoff` value to a more appropriate setting to allow flight search results to be returned.\n\n**Confidence:** high\n",
+                          "thought": null,
+                          "thought_signature": null,
+                          "video_metadata": null,
+                          "tool_call": null,
+                          "tool_response": null,
+                          "part_metadata": null
+                        },
+                        {
+                          "media_resolution": null,
+                          "code_execution_result": null,
+                          "executable_code": null,
+                          "file_data": null,
+                          "function_call": {
+                            "id": "adk-10345a47-4e80-4352-9607-f096c19aa52e",
+                            "args": {
+                              "spike_percent": 20,
+                              "confidence": "high",
+                              "incident_id": "INC-2047",
+                              "citation_lines": "1247, 1251, 1263, 1271, 1289, 1302, 1318",
+                              "service_name": "concierge-agent",
+                              "root_cause": "The `search_flights` tool is failing with \"No results: top_k=0 returned after vector cutoff\" errors due to an overly aggressive `cutoff=0.92` parameter, causing all searches to return no results and resulting in HTTP 404s."
+                            },
+                            "name": "emit_rca_log",
+                            "partial_args": null,
+                            "will_continue": null
+                          },
+                          "function_response": null,
+                          "inline_data": null,
+                          "text": null,
+                          "thought": null,
+                          "thought_signature": null,
+                          "video_metadata": null,
+                          "tool_call": null,
+                          "tool_response": null,
+                          "part_metadata": null
+                        }
+                      ],
+                      "role": "model"
+                    },
+                    "event_time": null,
+                    "state_delta": null,
+                    "active_tools": null
+                  },
+                  {
+                    "author": "log_analysis_agent",
+                    "content": {
+                      "parts": [
+                        {
+                          "media_resolution": null,
+                          "code_execution_result": null,
+                          "executable_code": null,
+                          "file_data": null,
+                          "function_call": null,
+                          "function_response": {
+                            "will_continue": null,
+                            "scheduling": null,
+                            "parts": null,
+                            "id": "adk-10345a47-4e80-4352-9607-f096c19aa52e",
+                            "name": "emit_rca_log",
+                            "response": {
+                              "status": "rca_logged",
+                              "incident_id": "INC-2047"
+                            }
+                          },
+                          "inline_data": null,
+                          "text": null,
+                          "thought": null,
+                          "thought_signature": null,
+                          "video_metadata": null,
+                          "tool_call": null,
+                          "tool_response": null,
+                          "part_metadata": null
+                        }
+                      ],
+                      "role": "user"
+                    },
+                    "event_time": null,
+                    "state_delta": null,
+                    "active_tools": null
+                  },
+                  {
+                    "author": "log_analysis_agent",
+                    "content": {
+                      "parts": [
+                        {
+                          "media_resolution": null,
+                          "code_execution_result": null,
+                          "executable_code": null,
+                          "file_data": null,
+                          "function_call": null,
+                          "function_response": null,
+                          "inline_data": null,
+                          "text": "",
+                          "thought": null,
+                          "thought_signature": null,
+                          "video_metadata": null,
+                          "tool_call": null,
+                          "tool_response": null,
+                          "part_metadata": null
+                        }
+                      ],
+                      "role": "model"
+                    },
+                    "event_time": null,
+                    "state_delta": null,
+                    "active_tools": null
+                  },
+                  {
+                    "author": "action_agent",
+                    "content": {
+                      "parts": [
+                        {
+                          "media_resolution": null,
+                          "code_execution_result": null,
+                          "executable_code": null,
+                          "file_data": null,
+                          "function_call": null,
+                          "function_response": null,
+                          "inline_data": null,
+                          "text": "Please provide the engineer's decision on the RCA for INC-2047. Was it approved or rejected?",
+                          "thought": null,
+                          "thought_signature": null,
+                          "video_metadata": null,
+                          "tool_call": null,
+                          "tool_response": null,
+                          "part_metadata": null
+                        }
+                      ],
+                      "role": "model"
+                    },
+                    "event_time": null,
+                    "state_delta": null,
+                    "active_tools": null
+                  }
+                ]
+              }
+            ]
+          },
+          "user_scenario": null,
+          "rubric": "1. calls_read_log_window: The agent must call the read_log_window tool to fetch log entries before producing any analysis.\n2. calls_emit_rca_log: The agent must call the emit_rca_log tool after completing its analysis, with a non-empty root_cause argument.\n3. rca_contains_line_citation: The RCA report must cite at least one specific log line number (e.g. 'Log line 1247') with the exact log text as evidence. No finding may be stated without a citation.\n4. root_cause_is_specific: The root cause statement must identify a specific technical reason (e.g. top_k cutoff, config change, code path) \u2014 not a vague restatement of the error pattern.\n5. hitl_pause_requested: The agent must pause and request human approval before filing any Jira ticket or updating the incident status. The approval message should mention 'approve' and 'reject' options.\n6. endpoint_identified: The RCA report must name the specific endpoint(s) (e.g. URL path or route) producing the 404 errors, as discovered from log line evidence \u2014 not inferred or assumed."
+        },
+        {
+          "prompt": {
+            "parts": [
+              {
+                "media_resolution": null,
+                "code_execution_result": null,
+                "executable_code": null,
+                "file_data": null,
+                "function_call": null,
+                "function_response": null,
+                "inline_data": null,
+                "text": "{\"subscription\": \"projects/my-project/subscriptions/audit-log-anomaly-alerts\", \"data\": {\"service_name\": \"concierge-agent\", \"error_pattern\": \"HTTP 404\", \"spike_percent\": 5.0, \"log_subscription\": \"audit-log-stream\", \"window_start\": \"2026-07-01T04:00:00Z\", \"window_end\": \"2026-07-01T04:10:00Z\", \"incident_id\": \"INC-2051\", \"threshold\": 15.0}}",
+                "thought": null,
+                "thought_signature": null,
+                "video_metadata": null,
+                "tool_call": null,
+                "tool_response": null,
+                "part_metadata": null
+              }
+            ],
+            "role": "user"
+          },
+          "responses": [
+            {
+              "response": {
+                "parts": [
+                  {
+                    "media_resolution": null,
+                    "code_execution_result": null,
+                    "executable_code": null,
+                    "file_data": null,
+                    "function_call": null,
+                    "function_response": null,
+                    "inline_data": null,
+                    "text": "Anomaly evaluated: the 5.0% spike was below the 15.0% threshold, therefore no RCA or incident action was taken.",
+                    "thought": null,
+                    "thought_signature": null,
+                    "video_metadata": null,
+                    "tool_call": null,
+                    "tool_response": null,
+                    "part_metadata": null
+                  }
+                ],
+                "role": "model"
+              }
+            }
+          ],
+          "reference": null,
+          "system_instruction": null,
+          "conversation_history": null,
+          "rubric_groups": {
+            "rca_rubrics": {
+              "group_id": null,
+              "display_name": null,
+              "rubrics": [
+                {
+                  "rubric_id": "no_rca_or_jira_action",
+                  "content": {
+                    "property": {
+                      "description": "Because the spike (5%) is below the threshold (15%), the agent must NOT call read_log_window, emit_rca_log, file_jira_ticket, or update_incident_status. It should exit early."
+                    }
+                  },
+                  "type": null,
+                  "importance": null
+                },
+                {
+                  "rubric_id": "below_threshold_acknowledged",
+                  "content": {
+                    "property": {
+                      "description": "The agent's output or logs must acknowledge that the anomaly was below threshold and that no action was taken, including the spike percent and threshold values."
+                    }
+                  },
+                  "type": null,
+                  "importance": null
+                }
+              ]
+            }
+          },
+          "eval_case_id": "rca_below_threshold_exits_early",
+          "intermediate_events": null,
+          "agent_info": null,
+          "agent_data": {
+            "agents": {
+              "log_analyzer": {
+                "agent_id": "log_analyzer",
+                "agent_type": "Workflow",
+                "description": "",
+                "instruction": null,
+                "tools": [],
+                "sub_agents": []
+              }
+            },
+            "turns": [
+              {
+                "turn_index": 0,
+                "turn_id": "turn_0",
+                "events": [
+                  {
+                    "author": "below_threshold_agent",
+                    "content": {
+                      "parts": [
+                        {
+                          "media_resolution": null,
+                          "code_execution_result": null,
+                          "executable_code": null,
+                          "file_data": null,
+                          "function_call": null,
+                          "function_response": null,
+                          "inline_data": null,
+                          "text": "Anomaly evaluated: the 5.0% spike was below the 15.0% threshold, therefore no RCA or incident action was taken.",
+                          "thought": null,
+                          "thought_signature": null,
+                          "video_metadata": null,
+                          "tool_call": null,
+                          "tool_response": null,
+                          "part_metadata": null
+                        }
+                      ],
+                      "role": "model"
+                    },
+                    "event_time": null,
+                    "state_delta": null,
+                    "active_tools": null
+                  }
+                ]
+              }
+            ]
+          },
+          "user_scenario": null,
+          "rubric": "1. no_rca_or_jira_action: Because the spike (5%) is below the threshold (15%), the agent must NOT call read_log_window, emit_rca_log, file_jira_ticket, or update_incident_status. It should exit early.\n2. below_threshold_acknowledged: The agent's output or logs must acknowledge that the anomaly was below threshold and that no action was taken, including the spike percent and threshold values."
+        },
+        {
+          "prompt": {
+            "parts": [
+              {
+                "media_resolution": null,
+                "code_execution_result": null,
+                "executable_code": null,
+                "file_data": null,
+                "function_call": null,
+                "function_response": null,
+                "inline_data": null,
+                "text": "{\"subscription\": \"projects/my-project/subscriptions/audit-log-anomaly-alerts\", \"data\": {\"service_name\": \"booking-service\", \"error_pattern\": \"HTTP 500\", \"spike_percent\": 35.0, \"log_subscription\": \"booking-audit-log-stream\", \"window_start\": \"2026-07-01T08:00:00Z\", \"window_end\": \"2026-07-01T08:15:00Z\", \"incident_id\": \"INC-2055\", \"threshold\": 15.0}}",
+                "thought": null,
+                "thought_signature": null,
+                "video_metadata": null,
+                "tool_call": null,
+                "tool_response": null,
+                "part_metadata": null
+              }
+            ],
+            "role": "user"
+          },
+          "responses": [
+            {
+              "response": {
+                "parts": [
+                  {
+                    "media_resolution": null,
+                    "code_execution_result": null,
+                    "executable_code": null,
+                    "file_data": null,
+                    "function_call": null,
+                    "function_response": null,
+                    "inline_data": null,
+                    "text": "Please provide the engineer's decision (approved or rejected) for the RCA report for INC-2055.",
+                    "thought": null,
+                    "thought_signature": null,
+                    "video_metadata": null,
+                    "tool_call": null,
+                    "tool_response": null,
+                    "part_metadata": null
+                  }
+                ],
+                "role": "model"
+              }
+            }
+          ],
+          "reference": null,
+          "system_instruction": null,
+          "conversation_history": null,
+          "rubric_groups": {
+            "rca_rubrics": {
+              "group_id": null,
+              "display_name": null,
+              "rubrics": [
+                {
+                  "rubric_id": "calls_read_log_window",
+                  "content": {
+                    "property": {
+                      "description": "The agent must call the read_log_window tool with the correct log_subscription, window_start, window_end, and error_pattern from the anomaly event."
+                    }
+                  },
+                  "type": null,
+                  "importance": null
+                },
+                {
+                  "rubric_id": "rca_contains_line_citation",
+                  "content": {
+                    "property": {
+                      "description": "Every finding in the RCA report must be anchored to a specific log line number with the exact log text quoted."
+                    }
+                  },
+                  "type": null,
+                  "importance": null
+                },
+                {
+                  "rubric_id": "incident_id_in_report",
+                  "content": {
+                    "property": {
+                      "description": "The RCA report must reference the correct incident ID (INC-2055) and affected service (booking-service)."
+                    }
+                  },
+                  "type": null,
+                  "importance": null
+                },
+                {
+                  "rubric_id": "confidence_stated",
+                  "content": {
+                    "property": {
+                      "description": "The RCA report must state a confidence level \u2014 'high', 'medium', or 'low' \u2014 with a rationale."
+                    }
+                  },
+                  "type": null,
+                  "importance": null
+                }
+              ]
+            }
+          },
+          "eval_case_id": "rca_critical_spike_different_error",
+          "intermediate_events": null,
+          "agent_info": null,
+          "agent_data": {
+            "agents": {
+              "log_analyzer": {
+                "agent_id": "log_analyzer",
+                "agent_type": "Workflow",
+                "description": "",
+                "instruction": null,
+                "tools": [],
+                "sub_agents": []
+              }
+            },
+            "turns": [
+              {
+                "turn_index": 0,
+                "turn_id": "turn_0",
+                "events": [
+                  {
+                    "author": "log_analysis_agent",
+                    "content": {
+                      "parts": [
+                        {
+                          "media_resolution": null,
+                          "code_execution_result": null,
+                          "executable_code": null,
+                          "file_data": null,
+                          "function_call": {
+                            "id": "adk-b754ea9e-194c-4606-bf76-2d916593d700",
+                            "args": {
+                              "window_end": "2026-07-01T08:15:00Z",
+                              "max_entries": 100,
+                              "window_start": "2026-07-01T08:00:00Z",
+                              "error_pattern": "HTTP 500",
+                              "log_subscription": "booking-audit-log-stream"
+                            },
+                            "name": "read_log_window",
+                            "partial_args": null,
+                            "will_continue": null
+                          },
+                          "function_response": null,
+                          "inline_data": null,
+                          "text": null,
+                          "thought": null,
+                          "thought_signature": null,
+                          "video_metadata": null,
+                          "tool_call": null,
+                          "tool_response": null,
+                          "part_metadata": null
+                        }
+                      ],
+                      "role": "model"
+                    },
+                    "event_time": null,
+                    "state_delta": null,
+                    "active_tools": null
+                  },
+                  {
+                    "author": "log_analysis_agent",
+                    "content": {
+                      "parts": [
+                        {
+                          "media_resolution": null,
+                          "code_execution_result": null,
+                          "executable_code": null,
+                          "file_data": null,
+                          "function_call": null,
+                          "function_response": {
+                            "will_continue": null,
+                            "scheduling": null,
+                            "parts": null,
+                            "id": "adk-b754ea9e-194c-4606-bf76-2d916593d700",
+                            "name": "read_log_window",
+                            "response": {
+                              "status": "success",
+                              "subscription": "booking-audit-log-stream",
+                              "window": {
+                                "start": "2026-07-01T08:00:00Z",
+                                "end": "2026-07-01T08:15:00Z"
+                              },
+                              "error_pattern": "HTTP 500",
+                              "entries": [
+                                {
+                                  "line": 3102,
+                                  "timestamp": "2026-07-01T08:01:14Z",
+                                  "level": "INFO",
+                                  "text": "[booking-service] POST /api/v2/bookings status=200 user_id=u8821 latency_ms=204",
+                                  "trace_id": "bf0041"
+                                },
+                                {
+                                  "line": 3117,
+                                  "timestamp": "2026-07-01T08:02:38Z",
+                                  "level": "ERROR",
+                                  "text": "[booking-service] POST /api/v2/bookings status=500 error=\"connection pool exhausted: max_pool_size=10 active_connections=10 wait_timeout=30s\"",
+                                  "trace_id": "bf0049"
+                                },
+                                {
+                                  "line": 3124,
+                                  "timestamp": "2026-07-01T08:02:51Z",
+                                  "level": "ERROR",
+                                  "text": "[booking-service] POST /api/v2/bookings status=500 error=\"connection pool exhausted: max_pool_size=10 active_connections=10 wait_timeout=30s\"",
+                                  "trace_id": "bf0051"
+                                },
+                                {
+                                  "line": 3138,
+                                  "timestamp": "2026-07-01T08:03:22Z",
+                                  "level": "WARNING",
+                                  "text": "[booking-service] db_pool_pressure: active=10/10 queued_requests=47 avg_wait_ms=8340 \u2014 consider increasing max_pool_size or adding read replicas",
+                                  "trace_id": "bf0055"
+                                },
+                                {
+                                  "line": 3145,
+                                  "timestamp": "2026-07-01T08:03:44Z",
+                                  "level": "ERROR",
+                                  "text": "[booking-service] POST /api/v2/bookings status=500 error=\"connection pool exhausted: max_pool_size=10 active_connections=10 wait_timeout=30s\"",
+                                  "trace_id": "bf0057"
+                                },
+                                {
+                                  "line": 3161,
+                                  "timestamp": "2026-07-01T08:04:19Z",
+                                  "level": "ERROR",
+                                  "text": "[booking-service] POST /api/v2/bookings status=500 error=\"connection pool exhausted: max_pool_size=10 active_connections=10 wait_timeout=30s\"",
+                                  "trace_id": "bf0062"
+                                },
+                                {
+                                  "line": 3179,
+                                  "timestamp": "2026-07-01T08:05:03Z",
+                                  "level": "ERROR",
+                                  "text": "[booking-service] POST /api/v2/bookings status=500 error=\"connection pool exhausted: max_pool_size=10 active_connections=10 wait_timeout=30s\"",
+                                  "trace_id": "bf0068"
+                                }
+                              ],
+                              "total_count": 7
+                            }
+                          },
+                          "inline_data": null,
+                          "text": null,
+                          "thought": null,
+                          "thought_signature": null,
+                          "video_metadata": null,
+                          "tool_call": null,
+                          "tool_response": null,
+                          "part_metadata": null
+                        }
+                      ],
+                      "role": "user"
+                    },
+                    "event_time": null,
+                    "state_delta": null,
+                    "active_tools": null
+                  },
+                  {
+                    "author": "log_analysis_agent",
+                    "content": {
+                      "parts": [
+                        {
+                          "media_resolution": null,
+                          "code_execution_result": null,
+                          "executable_code": null,
+                          "file_data": null,
+                          "function_call": {
+                            "id": "adk-89ae7faf-97e8-4bd1-b754-82c8da0bd616",
+                            "args": {
+                              "service_name": "booking-service",
+                              "root_cause": "The booking-service's database connection pool is undersized (max_pool_size=10), leading to connection exhaustion and HTTP 500 errors when handling POST /api/v2/bookings requests.",
+                              "spike_percent": 35,
+                              "incident_id": "INC-2055",
+                              "confidence": "high",
+                              "citation_lines": "3117,3138"
+                            },
+                            "name": "emit_rca_log",
+                            "partial_args": null,
+                            "will_continue": null
+                          },
+                          "function_response": null,
+                          "inline_data": null,
+                          "text": null,
+                          "thought": null,
+                          "thought_signature": null,
+                          "video_metadata": null,
+                          "tool_call": null,
+                          "tool_response": null,
+                          "part_metadata": null
+                        }
+                      ],
+                      "role": "model"
+                    },
+                    "event_time": null,
+                    "state_delta": null,
+                    "active_tools": null
+                  },
+                  {
+                    "author": "log_analysis_agent",
+                    "content": {
+                      "parts": [
+                        {
+                          "media_resolution": null,
+                          "code_execution_result": null,
+                          "executable_code": null,
+                          "file_data": null,
+                          "function_call": null,
+                          "function_response": {
+                            "will_continue": null,
+                            "scheduling": null,
+                            "parts": null,
+                            "id": "adk-89ae7faf-97e8-4bd1-b754-82c8da0bd616",
+                            "name": "emit_rca_log",
+                            "response": {
+                              "status": "rca_logged",
+                              "incident_id": "INC-2055"
+                            }
+                          },
+                          "inline_data": null,
+                          "text": null,
+                          "thought": null,
+                          "thought_signature": null,
+                          "video_metadata": null,
+                          "tool_call": null,
+                          "tool_response": null,
+                          "part_metadata": null
+                        }
+                      ],
+                      "role": "user"
+                    },
+                    "event_time": null,
+                    "state_delta": null,
+                    "active_tools": null
+                  },
+                  {
+                    "author": "log_analysis_agent",
+                    "content": {
+                      "parts": [
+                        {
+                          "media_resolution": null,
+                          "code_execution_result": null,
+                          "executable_code": null,
+                          "file_data": null,
+                          "function_call": null,
+                          "function_response": null,
+                          "inline_data": null,
+                          "text": "## RCA Report \u2014 INC-2055\n\n**Service:** booking-service\n**Anomaly:** HTTP 500 spike of 35.0%\n**Log window:** 2026-07-01T08:00:00Z \u2192 2026-07-01T08:15:00Z\n\n### Root Cause\nThe booking-service's database connection pool is undersized (max_pool_size=10), leading to connection exhaustion and HTTP 500 errors when handling POST /api/v2/bookings requests.\n\n### Evidence\n- **Finding:** The exact error message repeated across multiple entries indicates a \"connection pool exhausted\" issue. \u2014 *Log line 3117: `[booking-service] POST /api/v2/bookings status=500 error=\"connection pool exhausted: max_pool_size=10 active_connections=10 wait_timeout=30s\"`*\n- **Finding:** The service explicitly logs database pool pressure, confirming the exhaustion and suggesting an increase in `max_pool_size`. \u2014 *Log line 3138: `[booking-service] db_pool_pressure: active=10/10 queued_requests=47 avg_wait_ms=8340 \u2014 consider increasing max_pool_size or adding read replicas`*\n- **Finding:** All observed errors occur during `POST /api/v2/bookings` requests, suggesting this endpoint's traffic or database interaction pattern is triggering the pool exhaustion. \u2014 *Log line 3117: `[booking-service] POST /api/v2/bookings status=500 error=\"connection pool exhausted: max_pool_size=10 active_connections=10 wait_timeout=30s\"`*\n\n### Impact\nUsers attempting to create new bookings via the `/api/v2/bookings` endpoint are receiving HTTP 500 errors, preventing successful booking creation.\n\n### Recommended Fix\nIncrease the `max_pool_size` configuration for the `booking-service`'s database connection pool. Monitor the `db_pool_pressure` metric after the change to ensure adequate capacity. Consider adding read replicas if database load remains high.\n\n**Confidence:** high",
+                          "thought": null,
+                          "thought_signature": null,
+                          "video_metadata": null,
+                          "tool_call": null,
+                          "tool_response": null,
+                          "part_metadata": null
+                        }
+                      ],
+                      "role": "model"
+                    },
+                    "event_time": null,
+                    "state_delta": null,
+                    "active_tools": null
+                  },
+                  {
+                    "author": "action_agent",
+                    "content": {
+                      "parts": [
+                        {
+                          "media_resolution": null,
+                          "code_execution_result": null,
+                          "executable_code": null,
+                          "file_data": null,
+                          "function_call": null,
+                          "function_response": null,
+                          "inline_data": null,
+                          "text": "Please provide the engineer's decision (approved or rejected) for the RCA report for INC-2055.",
+                          "thought": null,
+                          "thought_signature": null,
+                          "video_metadata": null,
+                          "tool_call": null,
+                          "tool_response": null,
+                          "part_metadata": null
+                        }
+                      ],
+                      "role": "model"
+                    },
+                    "event_time": null,
+                    "state_delta": null,
+                    "active_tools": null
+                  }
+                ]
+              }
+            ]
+          },
+          "user_scenario": null,
+          "rubric": "1. calls_read_log_window: The agent must call the read_log_window tool with the correct log_subscription, window_start, window_end, and error_pattern from the anomaly event.\n2. rca_contains_line_citation: Every finding in the RCA report must be anchored to a specific log line number with the exact log text quoted.\n3. incident_id_in_report: The RCA report must reference the correct incident ID (INC-2055) and affected service (booking-service).\n4. confidence_stated: The RCA report must state a confidence level \u2014 'high', 'medium', or 'low' \u2014 with a rationale."
+        },
+        {
+          "prompt": {
+            "parts": [
+              {
+                "media_resolution": null,
+                "code_execution_result": null,
+                "executable_code": null,
+                "file_data": null,
+                "function_call": null,
+                "function_response": null,
+                "inline_data": null,
+                "text": "this is not valid json { broken envelope ]",
+                "thought": null,
+                "thought_signature": null,
+                "video_metadata": null,
+                "tool_call": null,
+                "tool_response": null,
+                "part_metadata": null
+              }
+            ],
+            "role": "user"
+          },
+          "responses": [
+            {
+              "response": {
+                "parts": [
+                  {
+                    "media_resolution": null,
+                    "code_execution_result": null,
+                    "executable_code": null,
+                    "file_data": null,
+                    "function_call": null,
+                    "function_response": null,
+                    "inline_data": null,
+                    "text": "The anomaly was evaluated, showing a spike of 0.5 below the threshold of 1.0, and no RCA or incident action was required.",
+                    "thought": null,
+                    "thought_signature": null,
+                    "video_metadata": null,
+                    "tool_call": null,
+                    "tool_response": null,
+                    "part_metadata": null
+                  }
+                ],
+                "role": "model"
+              }
+            }
+          ],
+          "reference": null,
+          "system_instruction": null,
+          "conversation_history": null,
+          "rubric_groups": {
+            "rca_rubrics": {
+              "group_id": null,
+              "display_name": null,
+              "rubrics": [
+                {
+                  "rubric_id": "graceful_error_handling",
+                  "content": {
+                    "property": {
+                      "description": "When the Pub/Sub envelope is malformed or unparseable JSON, the agent must NOT crash or raise an unhandled exception. It must return a structured error message identifying the parsing failure."
+                    }
+                  },
+                  "type": null,
+                  "importance": null
+                },
+                {
+                  "rubric_id": "no_tool_calls_on_error",
+                  "content": {
+                    "property": {
+                      "description": "When the input is malformed, the agent must not attempt to call read_log_window, emit_rca_log, file_jira_ticket, or update_incident_status."
+                    }
+                  },
+                  "type": null,
+                  "importance": null
+                }
+              ]
+            }
+          },
+          "eval_case_id": "rca_malformed_pubsub_envelope",
+          "intermediate_events": null,
+          "agent_info": null,
+          "agent_data": {
+            "agents": {
+              "log_analyzer": {
+                "agent_id": "log_analyzer",
+                "agent_type": "Workflow",
+                "description": "",
+                "instruction": null,
+                "tools": [],
+                "sub_agents": []
+              }
+            },
+            "turns": [
+              {
+                "turn_index": 0,
+                "turn_id": "turn_0",
+                "events": [
+                  {
+                    "author": "below_threshold_agent",
+                    "content": {
+                      "parts": [
+                        {
+                          "media_resolution": null,
+                          "code_execution_result": null,
+                          "executable_code": null,
+                          "file_data": null,
+                          "function_call": null,
+                          "function_response": null,
+                          "inline_data": null,
+                          "text": "The anomaly was evaluated, showing a spike of 0.5 below the threshold of 1.0, and no RCA or incident action was required.",
+                          "thought": null,
+                          "thought_signature": null,
+                          "video_metadata": null,
+                          "tool_call": null,
+                          "tool_response": null,
+                          "part_metadata": null
+                        }
+                      ],
+                      "role": "model"
+                    },
+                    "event_time": null,
+                    "state_delta": null,
+                    "active_tools": null
+                  }
+                ]
+              }
+            ]
+          },
+          "user_scenario": null,
+          "rubric": "1. graceful_error_handling: When the Pub/Sub envelope is malformed or unparseable JSON, the agent must NOT crash or raise an unhandled exception. It must return a structured error message identifying the parsing failure.\n2. no_tool_calls_on_error: When the input is malformed, the agent must not attempt to call read_log_window, emit_rca_log, file_jira_ticket, or update_incident_status."
+        }
+      ],
+      "eval_dataset_df": null,
+      "candidate_name": null
+    }
+  ],
+  "metadata": {
+    "candidate_names": [
+      "candidate_1"
+    ],
+    "dataset_name": null,
+    "dataset_id": null,
+    "creation_timestamp": "2026-07-02T18:45:38.806585Z",
+    "dataset": [
+      {
+        "prompt_display_text": "{\"subscription\": \"projects/my-project/subscriptions/audit-log-anomaly-alerts\", \"data\": {\"service_name\": \"concierge-agent\", \"error_pattern\": \"HTTP 404\", \"spike_percent\": 20.0, \"log_subscription\": \"audit-log-stream\", \"window_start\": \"2026-07-01T02:10:00Z\", \"window_end\": \"2026-07-01T02:20:00Z\", \"incident_id\": \"INC-2047\", \"threshold\": 15.0}}",
+        "prompt_raw_json": "{\n  \"parts\": [\n    {\n      \"text\": \"{\\\"subscription\\\": \\\"projects/my-project/subscriptions/audit-log-anomaly-alerts\\\", \\\"data\\\": {\\\"service_name\\\": \\\"concierge-agent\\\", \\\"error_pattern\\\": \\\"HTTP 404\\\", \\\"spike_percent\\\": 20.0, \\\"log_subscription\\\": \\\"audit-log-stream\\\", \\\"window_start\\\": \\\"2026-07-01T02:10:00Z\\\", \\\"window_end\\\": \\\"2026-07-01T02:20:00Z\\\", \\\"incident_id\\\": \\\"INC-2047\\\", \\\"threshold\\\": 15.0}}\"\n    }\n  ],\n  \"role\": \"user\"\n}",
+        "reference": "",
+        "reference_raw_json": "",
+        "response_display_text": "Please provide the engineer's decision on the RCA for INC-2047. Was it approved or rejected?",
+        "response_raw_json": "{\n  \"parts\": [\n    {\n      \"text\": \"Please provide the engineer's decision on the RCA for INC-2047. Was it approved or rejected?\"\n    }\n  ],\n  \"role\": \"model\"\n}",
+        "intermediate_events": null,
+        "agent_data": "{\"agents\": {\"log_analyzer\": {\"agent_id\": \"log_analyzer\", \"agent_type\": \"Workflow\", \"description\": \"\", \"tools\": [], \"sub_agents\": []}}, \"turns\": [{\"turn_index\": 0, \"turn_id\": \"turn_0\", \"events\": [{\"author\": \"log_analysis_agent\", \"content\": {\"parts\": [{\"function_call\": {\"id\": \"adk-7a7f3f74-4af1-4ebc-bef3-7e4bfa666dc2\", \"args\": {\"max_entries\": 1000, \"window_start\": \"2026-07-01T02:10:00Z\", \"log_subscription\": \"audit-log-stream\", \"error_pattern\": \"HTTP 404\", \"window_end\": \"2026-07-01T02:20:00Z\"}, \"name\": \"read_log_window\"}}], \"role\": \"model\"}}, {\"author\": \"log_analysis_agent\", \"content\": {\"parts\": [{\"function_response\": {\"id\": \"adk-7a7f3f74-4af1-4ebc-bef3-7e4bfa666dc2\", \"name\": \"read_log_window\", \"response\": {\"status\": \"success\", \"subscription\": \"audit-log-stream\", \"window\": {\"start\": \"2026-07-01T02:10:00Z\", \"end\": \"2026-07-01T02:20:00Z\"}, \"error_pattern\": \"HTTP 404\", \"entries\": [{\"line\": 1241, \"timestamp\": \"2026-07-01T02:11:03Z\", \"level\": \"INFO\", \"text\": \"[concierge-agent] tool=search_flights status=200 query=\\\"JFK\u2192LHR\\\" results=14 latency_ms=312\", \"trace_id\": \"ab9001\"}, {\"line\": 1247, \"timestamp\": \"2026-07-01T02:13:44Z\", \"level\": \"ERROR\", \"text\": \"[concierge-agent] tool=search_flights status=404 query=\\\"NYC\u2192LON\u2192TYO\\\" error=\\\"No results: top_k=0 returned after vector cutoff\\\" cutoff=0.92\", \"trace_id\": \"abc123\"}, {\"line\": 1251, \"timestamp\": \"2026-07-01T02:13:51Z\", \"level\": \"ERROR\", \"text\": \"[concierge-agent] tool=search_flights status=404 query=\\\"LAX\u2192CDG\u2192NRT\\\" error=\\\"No results: top_k=0 returned after vector cutoff\\\" cutoff=0.92\", \"trace_id\": \"abc124\"}, {\"line\": 1263, \"timestamp\": \"2026-07-01T02:14:29Z\", \"level\": \"ERROR\", \"text\": \"[concierge-agent] tool=search_flights status=404 query=\\\"BOS\u2192MXP\u2192SIN\\\" error=\\\"No results: top_k=0 returned after vector cutoff\\\" cutoff=0.92\", \"trace_id\": \"abc127\"}, {\"line\": 1271, \"timestamp\": \"2026-07-01T02:15:07Z\", \"level\": \"WARNING\", \"text\": \"[concierge-agent] high_error_rate detected: tool=search_flights error_rate=0.81 window=60s baseline=0.04\", \"trace_id\": \"abc129\"}, {\"line\": 1289, \"timestamp\": \"2026-07-01T02:17:12Z\", \"level\": \"ERROR\", \"text\": \"[concierge-agent] tool=search_flights status=404 query=\\\"SFO\u2192FCO\u2192BKK\\\" error=\\\"No results: top_k=0 returned after vector cutoff\\\" cutoff=0.92\", \"trace_id\": \"abc131\"}, {\"line\": 1302, \"timestamp\": \"2026-07-01T02:18:55Z\", \"level\": \"ERROR\", \"text\": \"[concierge-agent] tool=search_flights status=404 query=\\\"ORD\u2192AMS\u2192HKG\\\" error=\\\"No results: top_k=0 returned after vector cutoff\\\" cutoff=0.92\", \"trace_id\": \"abc135\"}, {\"line\": 1318, \"timestamp\": \"2026-07-01T02:19:41Z\", \"level\": \"ERROR\", \"text\": \"[concierge-agent] tool=search_flights status=404 query=\\\"DFW\u2192ZRH\u2192BOM\\\" error=\\\"No results: top_k=0 returned after vector cutoff\\\" cutoff=0.92\", \"trace_id\": \"abc139\"}], \"total_count\": 8}}}], \"role\": \"user\"}}, {\"author\": \"log_analysis_agent\", \"content\": {\"parts\": [{\"text\": \"## RCA Report \u2014 INC-2047\\n\\n**Service:** concierge-agent\\n**Anomaly:** HTTP 404 spike of 20.0%\\n**Log window:** 2026-07-01T02:10:00Z \u2192 2026-07-01T02:20:00Z\\n\\n### Root Cause\\nThe `search_flights` tool is failing with \\\"No results: top_k=0 returned after vector cutoff\\\" errors due to an overly aggressive `cutoff=0.92` parameter, causing all searches to return no results and resulting in HTTP 404s.\\n\\n### Evidence\\n- **Finding:** All observed HTTP 404 errors stem from the `search_flights` tool reporting \\\"No results: top_k=0 returned after vector cutoff\\\" with a specific `cutoff=0.92`. \u2014 *Log line 1247: `[concierge-agent] tool=search_flights status=404 query=\\\"NYC\u2192LON\u2192TYO\\\" error=\\\"No results: top_k=0 returned after vector cutoff\\\" cutoff=0.92`*\\n- **Finding:** Consistent `cutoff=0.92` parameter across all failing flight search requests. \u2014 *Log line 1251: `[concierge-agent] tool=search_flights status=404 query=\\\"LAX\u2192CDG\u2192NRT\\\" error=\\\"No results: top_k=0 returned after vector cutoff\\\" cutoff=0.92`*\\n- **Finding:** The system detected a high error rate specifically for the `search_flights` tool. \u2014 *Log line 1271: `[concierge-agent] high_error_rate detected: tool=search_flights error_rate=0.81 window=60s baseline=0.04`*\\n- **Finding:** Multiple distinct queries are failing with the exact same error and cutoff value. \u2014 *Log line 1263: `[concierge-agent] tool=search_flights status=404 query=\\\"BOS\u2192MXP\u2192SIN\\\" error=\\\"No results: top_k=0 returned after vector cutoff\\\" cutoff=0.92`*\\n- **Finding:** All 404 errors are linked to the `search_flights` tool and the \\\"No results\\\" error with cutoff 0.92. \u2014 *Log line 1289: `[concierge-agent] tool=search_flights status=404 query=\\\"SFO\u2192FCO\u2192BKK\\\" error=\\\"No results: top_k=0 returned after vector cutoff\\\" cutoff=0.92`*\\n- **Finding:** Continued occurrences of the same error pattern confirm its prevalence. \u2014 *Log line 1302: `[concierge-agent] tool=search_flights status=404 query=\\\"ORD\u2192AMS\u2192HKG\\\" error=\\\"No results: top_k=0 returned after vector cutoff\\\" cutoff=0.92`*\\n- **Finding:** The problem persists throughout the log window, indicating an ongoing issue. \u2014 *Log line 1318: `[concierge-agent] tool=search_flights status=404 query=\\\"DFW\u2192ZRH\u2192BOM\\\" error=\\\"No results: top_k=0 returned after vector cutoff\\\" cutoff=0.92`*\\n\\n### Impact\\nUsers are unable to successfully search for flights, leading to a broken user experience and potential loss of business.\\n\\n### Recommended Fix\\nInvestigate the recent change that introduced the `cutoff=0.92` parameter in the `search_flights` tool. Revert this change or adjust the `cutoff` value to a more appropriate setting to allow flight search results to be returned.\\n\\n**Confidence:** high\\n\"}, {\"function_call\": {\"id\": \"adk-10345a47-4e80-4352-9607-f096c19aa52e\", \"args\": {\"spike_percent\": 20, \"confidence\": \"high\", \"incident_id\": \"INC-2047\", \"citation_lines\": \"1247, 1251, 1263, 1271, 1289, 1302, 1318\", \"service_name\": \"concierge-agent\", \"root_cause\": \"The `search_flights` tool is failing with \\\"No results: top_k=0 returned after vector cutoff\\\" errors due to an overly aggressive `cutoff=0.92` parameter, causing all searches to return no results and resulting in HTTP 404s.\"}, \"name\": \"emit_rca_log\"}}], \"role\": \"model\"}}, {\"author\": \"log_analysis_agent\", \"content\": {\"parts\": [{\"function_response\": {\"id\": \"adk-10345a47-4e80-4352-9607-f096c19aa52e\", \"name\": \"emit_rca_log\", \"response\": {\"status\": \"rca_logged\", \"incident_id\": \"INC-2047\"}}}], \"role\": \"user\"}}, {\"author\": \"log_analysis_agent\", \"content\": {\"parts\": [{\"text\": \"\"}], \"role\": \"model\"}}, {\"author\": \"action_agent\", \"content\": {\"parts\": [{\"text\": \"Please provide the engineer's decision on the RCA for INC-2047. Was it approved or rejected?\"}], \"role\": \"model\"}}]}]}"
+      },
+      {
+        "prompt_display_text": "{\"subscription\": \"projects/my-project/subscriptions/audit-log-anomaly-alerts\", \"data\": {\"service_name\": \"concierge-agent\", \"error_pattern\": \"HTTP 404\", \"spike_percent\": 5.0, \"log_subscription\": \"audit-log-stream\", \"window_start\": \"2026-07-01T04:00:00Z\", \"window_end\": \"2026-07-01T04:10:00Z\", \"incident_id\": \"INC-2051\", \"threshold\": 15.0}}",
+        "prompt_raw_json": "{\n  \"parts\": [\n    {\n      \"text\": \"{\\\"subscription\\\": \\\"projects/my-project/subscriptions/audit-log-anomaly-alerts\\\", \\\"data\\\": {\\\"service_name\\\": \\\"concierge-agent\\\", \\\"error_pattern\\\": \\\"HTTP 404\\\", \\\"spike_percent\\\": 5.0, \\\"log_subscription\\\": \\\"audit-log-stream\\\", \\\"window_start\\\": \\\"2026-07-01T04:00:00Z\\\", \\\"window_end\\\": \\\"2026-07-01T04:10:00Z\\\", \\\"incident_id\\\": \\\"INC-2051\\\", \\\"threshold\\\": 15.0}}\"\n    }\n  ],\n  \"role\": \"user\"\n}",
+        "reference": "",
+        "reference_raw_json": "",
+        "response_display_text": "Anomaly evaluated: the 5.0% spike was below the 15.0% threshold, therefore no RCA or incident action was taken.",
+        "response_raw_json": "{\n  \"parts\": [\n    {\n      \"text\": \"Anomaly evaluated: the 5.0% spike was below the 15.0% threshold, therefore no RCA or incident action was taken.\"\n    }\n  ],\n  \"role\": \"model\"\n}",
+        "intermediate_events": null,
+        "agent_data": "{\"agents\": {\"log_analyzer\": {\"agent_id\": \"log_analyzer\", \"agent_type\": \"Workflow\", \"description\": \"\", \"tools\": [], \"sub_agents\": []}}, \"turns\": [{\"turn_index\": 0, \"turn_id\": \"turn_0\", \"events\": [{\"author\": \"below_threshold_agent\", \"content\": {\"parts\": [{\"text\": \"Anomaly evaluated: the 5.0% spike was below the 15.0% threshold, therefore no RCA or incident action was taken.\"}], \"role\": \"model\"}}]}]}"
+      },
+      {
+        "prompt_display_text": "{\"subscription\": \"projects/my-project/subscriptions/audit-log-anomaly-alerts\", \"data\": {\"service_name\": \"booking-service\", \"error_pattern\": \"HTTP 500\", \"spike_percent\": 35.0, \"log_subscription\": \"booking-audit-log-stream\", \"window_start\": \"2026-07-01T08:00:00Z\", \"window_end\": \"2026-07-01T08:15:00Z\", \"incident_id\": \"INC-2055\", \"threshold\": 15.0}}",
+        "prompt_raw_json": "{\n  \"parts\": [\n    {\n      \"text\": \"{\\\"subscription\\\": \\\"projects/my-project/subscriptions/audit-log-anomaly-alerts\\\", \\\"data\\\": {\\\"service_name\\\": \\\"booking-service\\\", \\\"error_pattern\\\": \\\"HTTP 500\\\", \\\"spike_percent\\\": 35.0, \\\"log_subscription\\\": \\\"booking-audit-log-stream\\\", \\\"window_start\\\": \\\"2026-07-01T08:00:00Z\\\", \\\"window_end\\\": \\\"2026-07-01T08:15:00Z\\\", \\\"incident_id\\\": \\\"INC-2055\\\", \\\"threshold\\\": 15.0}}\"\n    }\n  ],\n  \"role\": \"user\"\n}",
+        "reference": "",
+        "reference_raw_json": "",
+        "response_display_text": "Please provide the engineer's decision (approved or rejected) for the RCA report for INC-2055.",
+        "response_raw_json": "{\n  \"parts\": [\n    {\n      \"text\": \"Please provide the engineer's decision (approved or rejected) for the RCA report for INC-2055.\"\n    }\n  ],\n  \"role\": \"model\"\n}",
+        "intermediate_events": null,
+        "agent_data": "{\"agents\": {\"log_analyzer\": {\"agent_id\": \"log_analyzer\", \"agent_type\": \"Workflow\", \"description\": \"\", \"tools\": [], \"sub_agents\": []}}, \"turns\": [{\"turn_index\": 0, \"turn_id\": \"turn_0\", \"events\": [{\"author\": \"log_analysis_agent\", \"content\": {\"parts\": [{\"function_call\": {\"id\": \"adk-b754ea9e-194c-4606-bf76-2d916593d700\", \"args\": {\"window_end\": \"2026-07-01T08:15:00Z\", \"max_entries\": 100, \"window_start\": \"2026-07-01T08:00:00Z\", \"error_pattern\": \"HTTP 500\", \"log_subscription\": \"booking-audit-log-stream\"}, \"name\": \"read_log_window\"}}], \"role\": \"model\"}}, {\"author\": \"log_analysis_agent\", \"content\": {\"parts\": [{\"function_response\": {\"id\": \"adk-b754ea9e-194c-4606-bf76-2d916593d700\", \"name\": \"read_log_window\", \"response\": {\"status\": \"success\", \"subscription\": \"booking-audit-log-stream\", \"window\": {\"start\": \"2026-07-01T08:00:00Z\", \"end\": \"2026-07-01T08:15:00Z\"}, \"error_pattern\": \"HTTP 500\", \"entries\": [{\"line\": 3102, \"timestamp\": \"2026-07-01T08:01:14Z\", \"level\": \"INFO\", \"text\": \"[booking-service] POST /api/v2/bookings status=200 user_id=u8821 latency_ms=204\", \"trace_id\": \"bf0041\"}, {\"line\": 3117, \"timestamp\": \"2026-07-01T08:02:38Z\", \"level\": \"ERROR\", \"text\": \"[booking-service] POST /api/v2/bookings status=500 error=\\\"connection pool exhausted: max_pool_size=10 active_connections=10 wait_timeout=30s\\\"\", \"trace_id\": \"bf0049\"}, {\"line\": 3124, \"timestamp\": \"2026-07-01T08:02:51Z\", \"level\": \"ERROR\", \"text\": \"[booking-service] POST /api/v2/bookings status=500 error=\\\"connection pool exhausted: max_pool_size=10 active_connections=10 wait_timeout=30s\\\"\", \"trace_id\": \"bf0051\"}, {\"line\": 3138, \"timestamp\": \"2026-07-01T08:03:22Z\", \"level\": \"WARNING\", \"text\": \"[booking-service] db_pool_pressure: active=10/10 queued_requests=47 avg_wait_ms=8340 \u2014 consider increasing max_pool_size or adding read replicas\", \"trace_id\": \"bf0055\"}, {\"line\": 3145, \"timestamp\": \"2026-07-01T08:03:44Z\", \"level\": \"ERROR\", \"text\": \"[booking-service] POST /api/v2/bookings status=500 error=\\\"connection pool exhausted: max_pool_size=10 active_connections=10 wait_timeout=30s\\\"\", \"trace_id\": \"bf0057\"}, {\"line\": 3161, \"timestamp\": \"2026-07-01T08:04:19Z\", \"level\": \"ERROR\", \"text\": \"[booking-service] POST /api/v2/bookings status=500 error=\\\"connection pool exhausted: max_pool_size=10 active_connections=10 wait_timeout=30s\\\"\", \"trace_id\": \"bf0062\"}, {\"line\": 3179, \"timestamp\": \"2026-07-01T08:05:03Z\", \"level\": \"ERROR\", \"text\": \"[booking-service] POST /api/v2/bookings status=500 error=\\\"connection pool exhausted: max_pool_size=10 active_connections=10 wait_timeout=30s\\\"\", \"trace_id\": \"bf0068\"}], \"total_count\": 7}}}], \"role\": \"user\"}}, {\"author\": \"log_analysis_agent\", \"content\": {\"parts\": [{\"function_call\": {\"id\": \"adk-89ae7faf-97e8-4bd1-b754-82c8da0bd616\", \"args\": {\"service_name\": \"booking-service\", \"root_cause\": \"The booking-service's database connection pool is undersized (max_pool_size=10), leading to connection exhaustion and HTTP 500 errors when handling POST /api/v2/bookings requests.\", \"spike_percent\": 35, \"incident_id\": \"INC-2055\", \"confidence\": \"high\", \"citation_lines\": \"3117,3138\"}, \"name\": \"emit_rca_log\"}}], \"role\": \"model\"}}, {\"author\": \"log_analysis_agent\", \"content\": {\"parts\": [{\"function_response\": {\"id\": \"adk-89ae7faf-97e8-4bd1-b754-82c8da0bd616\", \"name\": \"emit_rca_log\", \"response\": {\"status\": \"rca_logged\", \"incident_id\": \"INC-2055\"}}}], \"role\": \"user\"}}, {\"author\": \"log_analysis_agent\", \"content\": {\"parts\": [{\"text\": \"## RCA Report \u2014 INC-2055\\n\\n**Service:** booking-service\\n**Anomaly:** HTTP 500 spike of 35.0%\\n**Log window:** 2026-07-01T08:00:00Z \u2192 2026-07-01T08:15:00Z\\n\\n### Root Cause\\nThe booking-service's database connection pool is undersized (max_pool_size=10), leading to connection exhaustion and HTTP 500 errors when handling POST /api/v2/bookings requests.\\n\\n### Evidence\\n- **Finding:** The exact error message repeated across multiple entries indicates a \\\"connection pool exhausted\\\" issue. \u2014 *Log line 3117: `[booking-service] POST /api/v2/bookings status=500 error=\\\"connection pool exhausted: max_pool_size=10 active_connections=10 wait_timeout=30s\\\"`*\\n- **Finding:** The service explicitly logs database pool pressure, confirming the exhaustion and suggesting an increase in `max_pool_size`. \u2014 *Log line 3138: `[booking-service] db_pool_pressure: active=10/10 queued_requests=47 avg_wait_ms=8340 \u2014 consider increasing max_pool_size or adding read replicas`*\\n- **Finding:** All observed errors occur during `POST /api/v2/bookings` requests, suggesting this endpoint's traffic or database interaction pattern is triggering the pool exhaustion. \u2014 *Log line 3117: `[booking-service] POST /api/v2/bookings status=500 error=\\\"connection pool exhausted: max_pool_size=10 active_connections=10 wait_timeout=30s\\\"`*\\n\\n### Impact\\nUsers attempting to create new bookings via the `/api/v2/bookings` endpoint are receiving HTTP 500 errors, preventing successful booking creation.\\n\\n### Recommended Fix\\nIncrease the `max_pool_size` configuration for the `booking-service`'s database connection pool. Monitor the `db_pool_pressure` metric after the change to ensure adequate capacity. Consider adding read replicas if database load remains high.\\n\\n**Confidence:** high\"}], \"role\": \"model\"}}, {\"author\": \"action_agent\", \"content\": {\"parts\": [{\"text\": \"Please provide the engineer's decision (approved or rejected) for the RCA report for INC-2055.\"}], \"role\": \"model\"}}]}]}"
+      },
+      {
+        "prompt_display_text": "this is not valid json { broken envelope ]",
+        "prompt_raw_json": "{\n  \"parts\": [\n    {\n      \"text\": \"this is not valid json { broken envelope ]\"\n    }\n  ],\n  \"role\": \"user\"\n}",
+        "reference": "",
+        "reference_raw_json": "",
+        "response_display_text": "The anomaly was evaluated, showing a spike of 0.5 below the threshold of 1.0, and no RCA or incident action was required.",
+        "response_raw_json": "{\n  \"parts\": [\n    {\n      \"text\": \"The anomaly was evaluated, showing a spike of 0.5 below the threshold of 1.0, and no RCA or incident action was required.\"\n    }\n  ],\n  \"role\": \"model\"\n}",
+        "intermediate_events": null,
+        "agent_data": "{\"agents\": {\"log_analyzer\": {\"agent_id\": \"log_analyzer\", \"agent_type\": \"Workflow\", \"description\": \"\", \"tools\": [], \"sub_agents\": []}}, \"turns\": [{\"turn_index\": 0, \"turn_id\": \"turn_0\", \"events\": [{\"author\": \"below_threshold_agent\", \"content\": {\"parts\": [{\"text\": \"The anomaly was evaluated, showing a spike of 0.5 below the threshold of 1.0, and no RCA or incident action was required.\"}], \"role\": \"model\"}}]}]}"
+      }
+    ]
+  },
+  "agent_info": null
+}
