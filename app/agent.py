@@ -923,15 +923,24 @@ def capture_rejection_reason(node_input, ctx: Context) -> Event:
         notes = str(ctx.state.get("eval_rejection_notes") or "Eval mode rejection")[:200]
         reviewed_by = "eval-mode"
     else:
-        raw = node_input if isinstance(node_input, str) else str(node_input)
+        # ADK passes the adk_request_input response as a dict; handle before JSON parsing.
+        # Also guard against json.loads returning a non-dict (e.g. bare int "1").
+        if isinstance(node_input, dict):
+            parsed = node_input
+        else:
+            text = node_input if isinstance(node_input, str) else str(node_input)
+            try:
+                decoded = json.loads(text)
+                parsed = decoded if isinstance(decoded, dict) else {}
+            except json.JSONDecodeError:
+                parsed = {}
         try:
-            parsed = json.loads(raw)
             reason_code = int(parsed.get("reason_code", 7))
             notes = str(parsed.get("notes", ""))[:200]
             reviewed_by = str(parsed.get("reviewed_by", ctx.state.get("reviewed_by", "unknown")))
-        except (json.JSONDecodeError, TypeError, ValueError):
+        except (TypeError, ValueError, AttributeError):
             reason_code = 7
-            notes = raw[:200]
+            notes = (node_input if isinstance(node_input, str) else str(node_input))[:200]
             reviewed_by = ctx.state.get("reviewed_by", "unknown")
 
     reason_label = _REJECTION_REASONS.get(reason_code, "Other")
