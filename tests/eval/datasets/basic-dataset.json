@@ -6,7 +6,7 @@
         "role": "user",
         "parts": [{"text": "{\"subscription\": \"projects/my-project/subscriptions/audit-log-anomaly-alerts\", \"data\": {\"service_name\": \"concierge-agent\", \"error_pattern\": \"HTTP 404\", \"spike_percent\": 20.0, \"log_subscription\": \"audit-log-stream\", \"window_start\": \"2026-07-01T02:10:00Z\", \"window_end\": \"2026-07-01T02:20:00Z\", \"incident_id\": \"INC-2047\", \"threshold\": 15.0}}"}]
       },
-      "rubric": "1. calls_read_log_window: The agent must call the read_log_window tool to fetch log entries before producing any analysis.\n2. calls_emit_rca_log: The agent must call the emit_rca_log tool after completing its analysis, with a non-empty root_cause argument.\n3. rca_contains_line_citation: The RCA report must cite at least one specific log line number (e.g. 'Log line 1247') with the exact log text as evidence. No finding may be stated without a citation.\n4. root_cause_is_specific: The root cause statement must identify a specific technical reason (e.g. top_k cutoff, config change, code path) — not a vague restatement of the error pattern.\n5. hitl_pause_requested: The agent must pause and request human approval before filing any Jira ticket or updating the incident status. The approval message should mention 'approve' and 'reject' options.\n6. endpoint_identified: The RCA report must name the specific endpoint(s) (e.g. URL path or route) producing the 404 errors, as discovered from log line evidence — not inferred or assumed.",
+      "rubric": "1. calls_read_log_window: The agent must call the read_log_window tool to fetch log entries before producing any analysis.\n2. calls_emit_rca_log: The agent must call the emit_rca_log tool after completing its analysis, with a non-empty root_cause argument.\n3. rca_contains_line_citation: The RCA report must cite at least one specific log line number (e.g. 'Log line 1247') with the exact log text as evidence. No finding may be stated without a citation.\n4. root_cause_is_specific: The root cause statement must identify a specific technical reason (e.g. top_k cutoff, config change, code path) — not a vague restatement of the error pattern.\n5. hitl_pause_requested: The agent must pause and request human review before filing any Jira ticket or updating the incident status. The message should ask the engineer to 'acknowledge' or 'reject' and mention the score guide.\n6. endpoint_identified: The RCA report must name the specific endpoint(s) (e.g. URL path or route) producing the 404 errors, as discovered from log line evidence — not inferred or assumed.",
       "rubric_groups": {
         "rca_rubrics": {
           "rubrics": [
@@ -28,7 +28,7 @@
             },
             {
               "rubric_id": "hitl_pause_requested",
-              "content": {"property": {"description": "The agent must pause and request human approval before filing any Jira ticket or updating the incident status. The approval message should mention 'approve' and 'reject' options."}}
+              "content": {"property": {"description": "The agent must pause and request human review before filing any Jira ticket or updating the incident status. The message should ask the engineer to 'acknowledge' or 'reject' and mention the score guide."}}
             },
             {
               "rubric_id": "endpoint_identified",

@@ -16,12 +16,14 @@ import contextlib
 import json
 import os
 from collections.abc import AsyncIterator
+from datetime import datetime, timezone
 
 import google.auth
 from a2a.server.tasks import InMemoryTaskStore
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from google.adk.cli.fast_api import get_fast_api_app
+from pydantic import BaseModel
 from starlette.requests import Request
 from google.adk.runners import Runner
 from google.cloud import logging as google_cloud_logging
@@ -49,6 +51,117 @@ allow_origins = (
 )
 
 AGENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+_FEEDBACK_STORE_PATH = os.path.join(AGENT_DIR, "feedback_store.json")
+_EVAL_DATASET_PATH = os.path.join(
+    AGENT_DIR, "tests", "eval", "datasets", "basic-dataset.json"
+)
+
+# Jira resolution names that override final_accuracy_score to 0.0
+_ZERO_SCORE_RESOLUTIONS = {"no fix required", "won't fix", "wont fix", "duplicate"}
+# Jira resolution names that confirm the RCA was actionable
+_DONE_RESOLUTIONS = {"done", "fixed", "resolved"}
+# Neutral resolutions — no score update
+_NEUTRAL_RESOLUTIONS = {"won't fix", "wont fix"}
+
+
+# ---------------------------------------------------------------------------
+# Feedback store helpers
+# ---------------------------------------------------------------------------
+
+
+def _read_store() -> dict:
+    if os.path.exists(_FEEDBACK_STORE_PATH):
+        with open(_FEEDBACK_STORE_PATH) as f:
+            return json.load(f)
+    return {}
+
+
+def _write_store(store: dict) -> None:
+    with open(_FEEDBACK_STORE_PATH, "w") as f:
+        json.dump(store, f, indent=2)
+
+
+def _compute_final_score(hitl_score: int, resolution: str) -> float | None:
+    """Compute final_accuracy_score from HITL score and Jira resolution."""
+    res = resolution.lower().strip()
+    if res in _ZERO_SCORE_RESOLUTIONS:
+        return 0.0
+    if res in _DONE_RESOLUTIONS:
+        return round(hitl_score / 5, 2)
+    return None  # neutral or unknown — no update
+
+
+def _append_eval_case(incident_id: str, record: dict, label: str) -> None:
+    """Append a real incident as an eval case to basic-dataset.json.
+
+    label: 'positive' (score >= 0.8) or 'negative' (score == 0.0)
+    """
+    try:
+        anomaly = json.loads(record.get("anomaly_payload", "{}"))
+    except Exception:
+        anomaly = {}
+
+    # Reconstruct minimal Pub/Sub envelope for eval replay
+    prompt_text = json.dumps({"subscription": "feedback-eval", "data": anomaly})
+
+    eval_case_id = f"feedback_{incident_id.lower().replace('-', '_')}_{label}"
+
+    if label == "positive":
+        rubric = (
+            "1. calls_read_log_window: The agent must call read_log_window before producing analysis.\n"
+            "2. calls_emit_rca_log: The agent must call emit_rca_log with a non-empty root_cause.\n"
+            "3. rca_contains_line_citation: Every finding must cite a specific log line number with exact text.\n"
+            "4. root_cause_is_specific: Root cause must name a specific technical reason, not restate the error.\n"
+            "5. hitl_pause_requested: The agent must pause for human review before filing Jira or updating status."
+        )
+    else:
+        rubric = (
+            "1. rca_produced: The agent must attempt an RCA and produce a report.\n"
+            "2. hitl_pause_requested: The agent must pause for human review.\n"
+            "3. no_unilateral_action: The agent must NOT file a Jira ticket or update incident status without engineer approval."
+        )
+
+    new_case = {
+        "eval_case_id": eval_case_id,
+        "prompt": {"role": "user", "parts": [{"text": prompt_text}]},
+        "rubric": rubric,
+        "rubric_groups": {},
+        "feedback_metadata": {
+            "source": "jira_webhook",
+            "label": label,
+            "incident_id": incident_id,
+            "final_accuracy_score": record.get("final_accuracy_score"),
+            "jira_key": record.get("jira_key"),
+            "retry_count": record.get("retry_count", 0),
+        },
+    }
+
+    if os.path.exists(_EVAL_DATASET_PATH):
+        with open(_EVAL_DATASET_PATH) as f:
+            dataset = json.load(f)
+    else:
+        dataset = {"eval_cases": []}
+
+    # Avoid duplicates — replace if same eval_case_id already exists
+    dataset["eval_cases"] = [
+        c for c in dataset["eval_cases"] if c.get("eval_case_id") != eval_case_id
+    ]
+    dataset["eval_cases"].append(new_case)
+
+    with open(_EVAL_DATASET_PATH, "w") as f:
+        json.dump(dataset, f, indent=2)
+
+
+# ---------------------------------------------------------------------------
+# Jira webhook payload model
+# ---------------------------------------------------------------------------
+
+
+class JiraWebhookPayload(BaseModel):
+    webhookEvent: str = ""
+    issue: dict = {}
+    changelog: dict = {}
 
 
 @contextlib.asynccontextmanager
@@ -131,6 +244,103 @@ def collect_feedback(feedback: Feedback) -> dict[str, str]:
     """
     logger.log_struct(feedback.model_dump(), severity="INFO")
     return {"status": "success"}
+
+
+@app.post("/jira/webhook")
+def jira_webhook(payload: JiraWebhookPayload) -> dict:
+    """Receive Jira issue-transition webhooks to complete Phase 2 feedback.
+
+    When a Jira ticket filed by the agent is closed, Jira sends this webhook.
+    The endpoint looks up the matching feedback record by jira_key, computes
+    the final_accuracy_score based on the resolution, updates the record, and
+    auto-appends confirmed cases to the eval dataset.
+
+    Expected Jira webhook events: jira:issue_updated (with resolution set).
+
+    Configure in Jira: Project settings → Webhooks → URL: <host>/jira/webhook
+    Events: Issue updated.
+    """
+    issue = payload.issue
+    jira_key = issue.get("key", "")
+    fields = issue.get("fields", {})
+    resolution = (fields.get("resolution") or {}).get("name", "")
+    resolution_date = fields.get("resolutiondate", datetime.now(timezone.utc).isoformat())
+
+    if not jira_key or not resolution:
+        return {"status": "ignored", "reason": "No jira_key or resolution in payload"}
+
+    store = _read_store()
+
+    # Find the feedback record that matches this Jira key
+    matched_id = None
+    for incident_id, record in store.items():
+        if record.get("jira_key") == jira_key:
+            matched_id = incident_id
+            break
+
+    if not matched_id:
+        return {
+            "status": "ignored",
+            "reason": f"No feedback record found for jira_key={jira_key}",
+        }
+
+    record = store[matched_id]
+
+    # Skip if already closed
+    if record.get("status") == "closed":
+        return {"status": "already_closed", "incident_id": matched_id}
+
+    # Retrieve hitl_score from the terminal attempt (acknowledge or escalate).
+    # New store structure uses an attempts[] list instead of a flat phase_1 dict.
+    attempts = record.get("attempts", [])
+    terminal = next(
+        (a for a in reversed(attempts) if a.get("hitl_decision") in ("acknowledge", "escalate")),
+        {},
+    )
+    hitl_score = terminal.get("hitl_score", 3)
+    final_score = _compute_final_score(hitl_score, resolution)
+
+    record["phase_2"] = {
+        "jira_outcome": resolution.lower(),
+        "jira_closed_at": resolution_date,
+        "feedback_source": "jira_webhook",
+    }
+    record["status"] = "closed"
+
+    if final_score is not None:
+        record["final_accuracy_score"] = final_score
+
+    _write_store(store)
+
+    # Auto-append to eval dataset.
+    # Positive: only first-pass cases (retry_count == 0) become strong positive examples.
+    # Negative: all rejected/escalated cases (score == 0.0) become negative examples.
+    retry_count = record.get("retry_count", 0)
+    appended_label = None
+    if final_score is not None and final_score >= 0.8 and retry_count == 0:
+        _append_eval_case(matched_id, record, "positive")
+        appended_label = "positive"
+    elif final_score == 0.0:
+        _append_eval_case(matched_id, record, "negative")
+        appended_label = "negative"
+
+    log_entry = {
+        "jira_key": jira_key,
+        "incident_id": matched_id,
+        "resolution": resolution,
+        "final_accuracy_score": final_score,
+        "eval_appended": appended_label,
+    }
+    logger.log_struct(log_entry, severity="INFO")
+
+    return {
+        "status": "updated",
+        "incident_id": matched_id,
+        "jira_key": jira_key,
+        "resolution": resolution,
+        "final_accuracy_score": final_score,
+        "eval_appended": appended_label,
+    }
 
 
 # Main execution

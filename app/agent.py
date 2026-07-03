@@ -21,9 +21,12 @@ Pipeline:
   2. Route by spike severity (below-threshold exits early).
   3. LLM agent reads the relevant log window and produces a grounded RCA report
      with exact log-line citations.
-  4. Pause for HITL engineer approval.
-  5. On approval: file a Jira story and transition incident to triage_completed.
-     On rejection: dismiss with a note.
+  4. HITL #1 — engineer acknowledges (with quality score 1-5) or rejects.
+  5. On reject — HITL #2 collects structured rejection reason + notes + reviewer.
+  6. On acknowledge: file a Jira story, transition incident to triage_completed,
+     and store Phase 1 feedback (pending Jira outcome).
+     On rejection: dismiss with a note and store feedback (score=0).
+  7. Phase 2 feedback arrives async via /jira/webhook when the ticket closes.
 """
 
 import base64
@@ -57,6 +60,26 @@ else:
     os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
 
 _MODEL = "gemini-2.5-flash"
+
+# Path to the feedback store JSON file (project root)
+_FEEDBACK_STORE_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "feedback_store.json"
+)
+
+# Curated rejection reason codes shown in HITL #2
+_REJECTION_REASONS = {
+    1: "Wrong root cause identified",
+    2: "Correct service but wrong component",
+    3: "Evidence citations are inaccurate",
+    4: "RCA is incomplete — missing key findings",
+    5: "False positive — no real incident",
+    6: "Already known issue / duplicate",
+    7: "Other (use notes)",
+}
+
+_REJECTION_REASONS_TEXT = "\n".join(
+    f"  {code}: {label}" for code, label in _REJECTION_REASONS.items()
+)
 
 
 # ---------------------------------------------------------------------------
@@ -430,6 +453,106 @@ def update_incident_status(
         return {"status": "error", "reason": str(exc), "incident_id": incident_id}
 
 
+def store_feedback(
+    incident_id: str,
+    attempt_number: int,
+    hitl_decision: str,
+    hitl_score: int,
+    reviewed_by: str,
+    jira_key: str,
+    rejection_reason_code: int,
+    rejection_reason_label: str,
+    rejection_notes: str,
+    anomaly_payload: str,
+) -> dict:
+    """Store per-attempt feedback for an incident in the local feedback store.
+
+    Appends one attempt record to the 'attempts' list keyed by incident_id in
+    feedback_store.json at the project root. Phase 2 (Jira outcome) is written
+    later by the /jira/webhook endpoint in fast_api_app.py.
+
+    Args:
+        incident_id: The incident tracking ID.
+        attempt_number: Which RCA attempt this is (1, 2, or 3).
+        hitl_decision: 'acknowledge', 'reject', or 'escalate'.
+        hitl_score: Engineer's quality score 1-5 (0 for reject/escalate).
+        reviewed_by: Engineer's email or name.
+        jira_key: Jira ticket key if filed (empty string otherwise).
+        rejection_reason_code: Reason code 1-7 (0 if acknowledged).
+        rejection_reason_label: Human-readable label for the reason code.
+        rejection_notes: Free-text notes from the engineer (max 200 chars).
+        anomaly_payload: JSON string of the original anomaly event dict.
+
+    Returns:
+        dict with 'status', 'incident_id', and 'feedback_status'.
+    """
+    from datetime import datetime, timezone
+
+    if os.path.exists(_FEEDBACK_STORE_PATH):
+        with open(_FEEDBACK_STORE_PATH) as f:
+            store = json.load(f)
+    else:
+        store = {}
+
+    try:
+        anomaly = json.loads(anomaly_payload)
+    except Exception:
+        anomaly = {}
+
+    terminal = hitl_decision in ("acknowledge", "escalate")
+    if terminal:
+        final_score = None  # resolved in Phase 2 when Jira ticket closes
+        feedback_status = "pending_jira"
+    else:
+        final_score = 0.0
+        feedback_status = "rejected"
+
+    attempt_record = {
+        "attempt": attempt_number,
+        "hitl_decision": hitl_decision,
+        "hitl_score": hitl_score,
+        "reviewed_by": reviewed_by,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    if hitl_decision in ("reject", "escalate") and rejection_reason_code:
+        attempt_record["rejection"] = {
+            "reason_code": rejection_reason_code,
+            "reason_label": rejection_reason_label,
+            "notes": rejection_notes[:200],
+        }
+
+    existing = store.get(incident_id, {})
+    attempts = existing.get("attempts", [])
+    # Replace existing record for this attempt number if re-stored, else append.
+    attempts = [a for a in attempts if a.get("attempt") != attempt_number]
+    attempts.append(attempt_record)
+    attempts.sort(key=lambda a: a["attempt"])
+
+    store[incident_id] = {
+        "incident_id": incident_id,
+        "service_name": anomaly.get("service_name", ""),
+        "error_pattern": anomaly.get("error_pattern", ""),
+        "spike_percent": anomaly.get("spike_percent", 0),
+        "attempts": attempts,
+        "retry_count": attempt_number - 1,
+        "phase_2": existing.get("phase_2"),
+        "jira_key": jira_key if jira_key else existing.get("jira_key"),
+        "final_accuracy_score": final_score,
+        "status": feedback_status,
+        "anomaly_payload": anomaly_payload,
+    }
+
+    with open(_FEEDBACK_STORE_PATH, "w") as f:
+        json.dump(store, f, indent=2)
+
+    return {
+        "status": "stored",
+        "incident_id": incident_id,
+        "attempt_number": attempt_number,
+        "feedback_status": feedback_status,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Function nodes
 # ---------------------------------------------------------------------------
@@ -478,6 +601,11 @@ def route_by_severity(node_input: dict, ctx: Context) -> Event:
     - spike >= threshold → ANALYZE (run the RCA pipeline)
     """
     ctx.state["anomaly"] = node_input
+    # Retry-loop counters — reset fresh for every new anomaly event.
+    ctx.state["retry_count"] = 0
+    ctx.state["attempt_number"] = 1
+    ctx.state["rejection_history"] = []
+    ctx.state["rejection_history_text"] = ""
     spike = node_input.get("spike_percent", 0)
     threshold = node_input.get("threshold", 15.0)
 
@@ -571,31 +699,39 @@ You receive an anomaly event. Your job:
 
 
 # ---------------------------------------------------------------------------
-# HITL: pause for engineer approval before filing Jira / updating incident
+# HITL #1 — pause for engineer review; collect acknowledge/reject + score
 # ---------------------------------------------------------------------------
 
 
 def request_rca_approval(node_input, ctx: Context):  # type: ignore[no-untyped-def]
     """Pause the workflow for engineer review before taking write actions.
 
-    The session stays paused until an engineer resumes it (via the HITL
-    UI or POST /run with the session ID). Their response flows into
-    ``action_agent``.
+    Adjusts its message based on retry_count:
+      0 → normal first-attempt review
+      1 → retry #1, shows previous rejection context
+      2 → escalated, warns Jira will be filed regardless
 
-    In eval mode (EVAL_MODE=true), the HITL pause is skipped so the
-    inference runner can complete the full workflow without blocking.
+    In eval mode (EVAL_MODE=true), the HITL pause is skipped.
     """
     anomaly = ctx.state.get("anomaly", {})
+    retry_count = ctx.state.get("retry_count", 0)
 
     rca_report = node_input if isinstance(node_input, str) else str(node_input)
 
-    # Store RCA and anomaly details in session state so action_agent can
-    # read them via ADK state injection without asking the user again.
     ctx.state["rca_report"] = rca_report
     ctx.state["incident_id"] = anomaly.get("incident_id", "")
     ctx.state["service_name"] = anomaly.get("service_name", "")
+    ctx.state["anomaly_payload"] = json.dumps(anomaly)
+    # Ensure rejection state keys always exist for action_agent template rendering.
+    ctx.state.setdefault("rejection_reason_code", 0)
+    ctx.state.setdefault("rejection_reason_label", "")
+    ctx.state.setdefault("rejection_notes", "")
+    ctx.state.setdefault("rejection_reviewed_by", "")
 
     if os.environ.get("EVAL_MODE", "").lower() == "true":
+        ctx.state["hitl_decision"] = "acknowledge"
+        ctx.state["hitl_score"] = 5
+        ctx.state["reviewed_by"] = "eval-mode"
         return Event(
             output={
                 "hitl_skipped": True,
@@ -605,22 +741,255 @@ def request_rca_approval(node_input, ctx: Context):  # type: ignore[no-untyped-d
             }
         )
 
+    json_prompt = (
+        "  Acknowledge: {\"decision\": \"acknowledge\", \"score\": <1-5>, \"reviewed_by\": \"<your email>\"}\n"
+        "  Reject:      {\"decision\": \"reject\", \"reviewed_by\": \"<your email>\"}\n\n"
+        "Score guide: 1=wrong, 2=right area/wrong cause, 3=partial, 4=mostly correct, 5=spot on"
+    )
+
+    if retry_count == 0:
+        message = (
+            "RCA complete. Review the findings above and respond with JSON:\n\n"
+            + json_prompt
+        )
+    elif retry_count == 1:
+        history = ctx.state.get("rejection_history_text", "")
+        message = (
+            f"⚠️  RETRY #1 — Previous rejection:\n{history}\n\n"
+            "Review the improved RCA above and respond with JSON:\n\n"
+            + json_prompt
+        )
+    else:
+        history = ctx.state.get("rejection_history_text", "")
+        message = (
+            "⚠️  ESCALATED — 2 prior rejections. This RCA will be filed to Jira for "
+            "engineering investigation regardless of your decision.\n"
+            "You may still provide a quality score.\n\n"
+            f"Rejection history:\n{history}\n\n"
+            "Respond with JSON:\n\n"
+            "  Acknowledge: {\"decision\": \"acknowledge\", \"score\": <1-5>, \"reviewed_by\": \"<your email>\"}\n"
+            "  Reject:      {\"decision\": \"reject\", \"score\": <1-5>, \"reviewed_by\": \"<your email>\"}\n"
+            "  (Jira will be filed regardless of acknowledge/reject)\n\n"
+            "Score guide: 1=wrong, 2=right area/wrong cause, 3=partial, 4=mostly correct, 5=spot on"
+        )
+
     yield RequestInput(
-        message=(
-            "RCA complete. Review the findings above and respond with "
-            "'approve' to file a Jira story and mark the incident as "
-            "triage_completed, or 'reject' to dismiss without action."
-        ),
+        message=message,
         payload={
             "incident_id": anomaly.get("incident_id"),
             "service_name": anomaly.get("service_name"),
+            "retry_count": retry_count,
             "rca_report": rca_report,
         },
     )
 
 
+def route_hitl_decision(node_input, ctx: Context) -> Event:
+    """Parse the HITL response and route based on decision and retry_count.
+
+    In ADK's 3-tuple chain (log_analysis_agent, request_rca_approval, route_hitl_decision),
+    the engineer's response becomes THIS node's node_input.
+    EVAL_MODE pre-sets ctx.state so we skip parsing entirely.
+
+    Routes:
+      ACKNOWLEDGE — engineer approved (any attempt)
+      REJECT      — engineer rejected (attempt 1 or 2, triggers retry loop)
+      ESCALATE    — 3rd attempt (retry_count >= 2); Jira filed regardless of decision
+    """
+    retry_count = ctx.state.get("retry_count", 0)
+
+    # EVAL_MODE pre-set — bypass parsing
+    if ctx.state.get("hitl_decision"):
+        decision = ctx.state["hitl_decision"]
+        if retry_count >= 2:
+            return Event(route="ESCALATE", output={"decision": decision})
+        route = "ACKNOWLEDGE" if decision == "acknowledge" else "REJECT"
+        return Event(route=route, output={"decision": decision})
+
+    text = node_input if isinstance(node_input, str) else str(node_input)
+
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        lower = text.strip().lower()
+        if lower.startswith("reject"):
+            parsed = {"decision": "reject", "reviewed_by": "unknown"}
+        else:
+            parsed = {"decision": "acknowledge", "score": 3, "reviewed_by": "unknown"}
+
+    decision = parsed.get("decision", "acknowledge").lower().strip()
+    reviewed_by = str(parsed.get("reviewed_by", "unknown")).strip()
+
+    if retry_count >= 2:
+        # 3rd attempt — always file Jira regardless of engineer's decision.
+        # Route to ACKNOWLEDGE so action_agent runs; hitl_decision="escalate" when
+        # engineer rejected so action_agent knows to prefix the Jira summary.
+        score = max(1, min(5, int(parsed.get("score", 3)))) if decision == "acknowledge" else 0
+        hitl_decision = "acknowledge" if decision == "acknowledge" else "escalate"
+        ctx.state["hitl_decision"] = hitl_decision
+        ctx.state["hitl_score"] = score
+        ctx.state["reviewed_by"] = reviewed_by
+        return Event(route="ACKNOWLEDGE", output={"decision": hitl_decision})
+
+    if decision == "acknowledge":
+        score = max(1, min(5, int(parsed.get("score", 3))))
+        ctx.state["hitl_decision"] = "acknowledge"
+        ctx.state["hitl_score"] = score
+        ctx.state["reviewed_by"] = reviewed_by
+        return Event(route="ACKNOWLEDGE", output={"decision": "acknowledge", "score": score})
+    else:
+        ctx.state["hitl_decision"] = "reject"
+        ctx.state["hitl_score"] = 0
+        ctx.state["reviewed_by"] = reviewed_by
+        return Event(route="REJECT", output={"decision": "reject"})
+
+
 # ---------------------------------------------------------------------------
-# Action agent — executes write actions after HITL approval
+# HITL #2 — collect structured rejection reason (only on reject path)
+# ---------------------------------------------------------------------------
+
+
+def request_rejection_reason(node_input, ctx: Context):  # type: ignore[no-untyped-def]
+    """Pause to collect a structured rejection reason from the engineer.
+
+    Called only when HITL #1 decision is 'reject'. The engineer selects a
+    reason code from the curated list and optionally adds notes (≤200 chars).
+    In ADK's 3-tuple chain the engineer's response becomes node_input for the
+    next node (capture_rejection_reason), not the return value of yield.
+    """
+    yield RequestInput(
+        message=(
+            "Please provide the rejection reason as JSON:\n\n"
+            "  {\"reason_code\": <1-7>, \"notes\": \"<up to 200 chars>\", \"reviewed_by\": \"<your email>\"}\n\n"
+            f"Reason codes:\n{_REJECTION_REASONS_TEXT}"
+        ),
+        payload={
+            "incident_id": ctx.state.get("incident_id", ""),
+            "reviewed_by": ctx.state.get("reviewed_by", ""),
+        },
+    )
+
+
+def capture_rejection_reason(node_input, ctx: Context) -> Event:
+    """Receive the HITL #2 engineer response as node_input (3-tuple chain pattern).
+
+    Parses the rejection JSON, stores fields in ctx.state, increments retry_count
+    and attempt_number, and appends to rejection_history_text for retry context.
+    """
+    raw = node_input if isinstance(node_input, str) else str(node_input)
+    try:
+        parsed = json.loads(raw)
+        reason_code = int(parsed.get("reason_code", 7))
+        notes = str(parsed.get("notes", ""))[:200]
+        reviewed_by = str(parsed.get("reviewed_by", ctx.state.get("reviewed_by", "unknown")))
+    except (json.JSONDecodeError, TypeError, ValueError):
+        reason_code = 7
+        notes = raw[:200]
+        reviewed_by = ctx.state.get("reviewed_by", "unknown")
+
+    reason_label = _REJECTION_REASONS.get(reason_code, "Other")
+
+    # Store current rejection fields for action_agent template rendering.
+    ctx.state["rejection_reason_code"] = reason_code
+    ctx.state["rejection_reason_label"] = reason_label
+    ctx.state["rejection_notes"] = notes
+    ctx.state["rejection_reviewed_by"] = reviewed_by
+
+    # Append this rejection to the history list and rebuild the display text.
+    attempt_number = ctx.state.get("attempt_number", 1)
+    history: list = ctx.state.get("rejection_history", [])
+    history.append({
+        "attempt": attempt_number,
+        "reason_code": reason_code,
+        "reason_label": reason_label,
+        "notes": notes,
+        "reviewed_by": reviewed_by,
+    })
+    ctx.state["rejection_history"] = history
+    ctx.state["rejection_history_text"] = "\n".join(
+        f"  #{r['attempt']}: {r['reason_label']} — \"{r['notes']}\" (by {r['reviewed_by']})"
+        for r in history
+    )
+
+    # Advance counters for the upcoming retry attempt.
+    ctx.state["retry_count"] = ctx.state.get("retry_count", 0) + 1
+    ctx.state["attempt_number"] = attempt_number + 1
+
+    return Event(output=raw)
+
+
+def route_after_rejection(node_input, ctx: Context) -> Event:
+    """Always route to the retry analysis agent.
+
+    Escalation is handled upstream in route_hitl_decision (when retry_count >= 2).
+    By the time we reach this node the retry_count has already been incremented
+    by capture_rejection_reason, so values are 1 or 2 at most.
+    """
+    return Event(route="RETRY", output=node_input)
+
+
+# ---------------------------------------------------------------------------
+# Retry analysis agent — re-runs RCA with rejection feedback as context
+# ---------------------------------------------------------------------------
+
+retry_analysis_agent = Agent(
+    name="retry_analysis_agent",
+    model=Gemini(
+        model=_MODEL,
+        retry_options=types.HttpRetryOptions(attempts=3),
+    ),
+    mode="single_turn",
+    instruction="""You are re-analyzing a production incident after a previous RCA was rejected by an engineer.
+
+=== ORIGINAL ANOMALY ===
+{anomaly_payload}
+
+=== PREVIOUS RCA (REJECTED) ===
+{rca_report}
+
+=== REJECTION FEEDBACK ===
+{rejection_history_text}
+
+Your task: produce an improved RCA that directly addresses the rejection feedback above.
+
+Steps:
+1. Call `read_log_window` again using the subscription, time window, and error pattern from the anomaly above.
+2. Carefully re-examine the logs with the rejection feedback in mind:
+   - If the feedback says the root cause was wrong, look deeper for the true cause.
+   - If citations were inaccurate, re-verify every log line number you cite.
+   - If the RCA was incomplete, ensure you cover all findings in the log window.
+3. Cite the EXACT log line number(s) for EVERY finding. No claim without a citation.
+4. Call `emit_rca_log` with your updated root cause, confidence level, and citation lines.
+5. Return the complete improved RCA in this format:
+
+## RCA Report (Retry) — <incident_id>
+
+**Service:** <service_name>
+**Anomaly:** <error_pattern> spike of <spike_percent>%
+**Log window:** <window_start> → <window_end>
+**Changes from previous RCA:** <brief summary of what was corrected>
+
+### Root Cause
+<one-sentence statement of root cause>
+
+### Evidence
+- **Finding:** <description> — *Log line N: `<exact log text>`*
+(repeat for each finding)
+
+### Impact
+<brief description of user-facing impact>
+
+### Recommended Fix
+<specific, actionable fix>
+
+**Confidence:** high | medium | low
+""",
+    tools=[read_log_window, emit_rca_log],
+)
+
+
+# ---------------------------------------------------------------------------
+# Action agent — executes write actions after HITL decisions
 # ---------------------------------------------------------------------------
 
 action_agent = Agent(
@@ -630,30 +999,79 @@ action_agent = Agent(
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
     mode="single_turn",
-    instruction="""You process the engineer's approval decision after an RCA review.
+    instruction="""You process the engineer's decision after an RCA review.
 
-The RCA report that was just produced is available below — use it to populate all tool arguments. Do NOT ask the engineer for any information.
+The RCA report and context are available below. Do NOT ask the engineer for any information.
 
 --- RCA REPORT ---
 {rca_report}
 --- END RCA REPORT ---
 
-Incident ID: {incident_id}
-Service: {service_name}
+Incident ID:    {incident_id}
+Service:        {service_name}
+Decision:       {hitl_decision}
+HITL Score:     {hitl_score}
+Reviewed by:    {reviewed_by}
+Attempt number: {attempt_number}
+Anomaly data:   {anomaly_payload}
 
-If the decision is 'approve' or 'approved':
-1. Call `file_jira_ticket` using the incident ID, service name, root cause, evidence citations, and full RCA description extracted from the report above.
-2. Call `update_incident_status` with status='triage_completed' and the root cause as the resolution note.
-3. Confirm both actions and report the Jira ticket URL (or skipped status if not configured).
+==========================================================
+IF {hitl_decision} is "acknowledge":
+==========================================================
 
-If the decision is 'reject' or 'rejected':
-1. Call `update_incident_status` with status='dismissed' and a note that the engineer reviewed and dismissed the RCA.
-2. Do NOT file a Jira ticket.
-3. Confirm the dismissal.
+1. Call `file_jira_ticket` using the incident ID, service name, root cause,
+   evidence citations, and full RCA description extracted from the report above.
 
-Be concise and specific — report exactly what was done.
+2. Call `update_incident_status` with status='triage_completed' and the root
+   cause as the resolution note.
+
+3. Call `store_feedback` with ALL of these exact arguments:
+   - incident_id            = {incident_id}
+   - attempt_number         = {attempt_number}
+   - hitl_decision          = "acknowledge"
+   - hitl_score             = {hitl_score}
+   - reviewed_by            = {reviewed_by}
+   - jira_key               = the ticket key returned by file_jira_ticket (use "" if skipped)
+   - rejection_reason_code  = 0
+   - rejection_reason_label = ""
+   - rejection_notes        = ""
+   - anomaly_payload        = {anomaly_payload}
+
+4. Confirm all actions and report the Jira ticket URL (or skipped status).
+
+==========================================================
+IF {hitl_decision} is "escalate":
+==========================================================
+
+This RCA was rejected {attempt_number} time(s) and is being escalated for engineering
+investigation. File a Jira ticket regardless — prefix the summary with "[ESCALATED]".
+
+Rejection history:
+{rejection_history_text}
+
+1. Call `file_jira_ticket` with summary starting "[ESCALATED] ..." and include
+   the full rejection history in the description.
+
+2. Call `update_incident_status` with status='escalated' and a note that this
+   was escalated after {attempt_number} rejection(s).
+
+3. Call `store_feedback` with ALL of these exact arguments:
+   - incident_id            = {incident_id}
+   - attempt_number         = {attempt_number}
+   - hitl_decision          = "escalate"
+   - hitl_score             = {hitl_score}
+   - reviewed_by            = {reviewed_by}
+   - jira_key               = the ticket key returned by file_jira_ticket (use "" if skipped)
+   - rejection_reason_code  = {rejection_reason_code}
+   - rejection_reason_label = {rejection_reason_label}
+   - rejection_notes        = {rejection_notes}
+   - anomaly_payload        = {anomaly_payload}
+
+4. Confirm escalation and report the Jira ticket URL.
+
+Be concise — report exactly what was done.
 """,
-    tools=[file_jira_ticket, update_incident_status],
+    tools=[file_jira_ticket, update_incident_status, store_feedback],
 )
 
 
@@ -673,7 +1091,22 @@ root_agent = Workflow(
             },
         ),
         (_log_below_threshold, below_threshold),
-        (log_analysis_agent, request_rca_approval, action_agent),
+        # First attempt: analysis → HITL → route (defines request_rca_approval→route_hitl_decision)
+        (log_analysis_agent, request_rca_approval, route_hitl_decision),
+        # Retry attempt(s) feed into the same HITL node (edge already defined above)
+        (retry_analysis_agent, request_rca_approval),
+        # HITL routing: acknowledge → action_agent, reject → retry loop
+        # (3rd attempt always routes ACKNOWLEDGE with hitl_decision="escalate" in state)
+        (
+            route_hitl_decision,
+            {
+                "ACKNOWLEDGE": action_agent,
+                "REJECT": request_rejection_reason,
+            },
+        ),
+        # Rejection reason collection → increment counters → route to retry
+        (request_rejection_reason, capture_rejection_reason, route_after_rejection),
+        (route_after_rejection, {"RETRY": retry_analysis_agent}),
     ],
 )
 
