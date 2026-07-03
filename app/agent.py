@@ -831,16 +831,19 @@ def route_hitl_decision(node_input, ctx: Context) -> Event:
         route = "ACKNOWLEDGE" if decision == "acknowledge" else "REJECT"
         return Event(route=route, output={"decision": decision})
 
-    text = node_input if isinstance(node_input, str) else str(node_input)
-
-    try:
-        parsed = json.loads(text)
-    except json.JSONDecodeError:
-        lower = text.strip().lower()
-        if lower.startswith("reject"):
-            parsed = {"decision": "reject", "reviewed_by": "unknown"}
-        else:
-            parsed = {"decision": "acknowledge", "score": 3, "reviewed_by": "unknown"}
+    # ADK passes the adk_request_input response as a dict; handle that before JSON parsing
+    if isinstance(node_input, dict):
+        parsed = node_input
+    else:
+        text = node_input if isinstance(node_input, str) else str(node_input)
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            lower = text.strip().lower()
+            if lower.startswith("reject"):
+                parsed = {"decision": "reject", "reviewed_by": "unknown"}
+            else:
+                parsed = {"decision": "acknowledge", "score": 3, "reviewed_by": "unknown"}
 
     decision = parsed.get("decision", "acknowledge").lower().strip()
     reviewed_by = str(parsed.get("reviewed_by", "unknown")).strip()
