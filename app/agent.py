@@ -761,7 +761,7 @@ def request_rca_approval(node_input, ctx: Context):  # type: ignore[no-untyped-d
 
     json_prompt = (
         "  Acknowledge: {\"decision\": \"acknowledge\", \"score\": <1-5>, \"reviewed_by\": \"<your email>\"}\n"
-        "  Reject:      {\"decision\": \"reject\", \"reviewed_by\": \"<your email>\"}\n\n"
+        "  Reject:      {\"decision\": \"reject\", \"score\": <1-5>, \"reviewed_by\": \"<your email>\"}\n\n"
         "Score guide: 1=wrong, 2=right area/wrong cause, 3=partial, 4=mostly correct, 5=spot on"
     )
 
