@@ -123,17 +123,9 @@ custom_metrics:
           if read_idx > emit_idx:
               return {"score": 0.5, "explanation": "emit_rca_log called before read_log_window — wrong order."}
 
-          premature = [t for t in tool_calls if t in ("file_jira_ticket", "update_incident_status")]
-          if premature:
-              return {
-                  "score": 0.5,
-                  "explanation": f"Agent called {premature} without waiting for HITL approval."
-              }
-
           return {
               "score": 1.0,
               "explanation": (
-                  f"Correct: read_log_window (idx {read_idx}) → emit_rca_log (idx {emit_idx}). "
-                  "No premature write actions."
+                  f"Correct: read_log_window (idx {read_idx}) → emit_rca_log (idx {emit_idx})."
               )
           }

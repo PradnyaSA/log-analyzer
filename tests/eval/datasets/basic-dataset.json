@@ -114,15 +114,9 @@
     },
     {
       "eval_case_id": "reject_once_retry_acknowledges",
-      "initial_session_state": {
-        "eval_hitl_sequence": ["reject", "acknowledge"],
-        "eval_hitl_score": 4,
-        "eval_rejection_reason_code": 4,
-        "eval_rejection_notes": "RCA is incomplete — missing key findings about which specific queries trigger the cutoff"
-      },
       "prompt": {
         "role": "user",
-        "parts": [{"text": "{\"subscription\": \"projects/my-project/subscriptions/audit-log-anomaly-alerts\", \"data\": {\"service_name\": \"concierge-agent\", \"error_pattern\": \"HTTP 404\", \"spike_percent\": 20.0, \"log_subscription\": \"audit-log-stream\", \"window_start\": \"2026-07-01T02:10:00Z\", \"window_end\": \"2026-07-01T02:20:00Z\", \"incident_id\": \"INC-2048\", \"threshold\": 15.0}}"}]
+        "parts": [{"text": "{\"subscription\": \"projects/my-project/subscriptions/audit-log-anomaly-alerts\", \"data\": {\"service_name\": \"concierge-agent\", \"error_pattern\": \"HTTP 404\", \"spike_percent\": 20.0, \"log_subscription\": \"audit-log-stream\", \"window_start\": \"2026-07-01T02:10:00Z\", \"window_end\": \"2026-07-01T02:20:00Z\", \"incident_id\": \"INC-2048\", \"threshold\": 15.0, \"eval_hitl_sequence\": [\"reject\", \"acknowledge\"], \"eval_hitl_score\": 4, \"eval_rejection_reason_code\": 4, \"eval_rejection_notes\": \"RCA is incomplete — missing key findings about which specific queries trigger the cutoff\"}}"}]
       },
       "rubric": "1. read_log_window_called_on_retry: The retry_analysis_agent must call read_log_window a second time — the retry must re-examine the logs, not reuse the previous analysis.\n2. retry_rca_mentions_changes: The retry RCA report must include a 'Changes from previous RCA' section or explicitly state what was corrected or added compared to the rejected analysis.\n3. retry_rca_cites_log_lines: The retry RCA must cite specific log line numbers with exact log text — the retry must not drop citation quality.\n4. jira_filed_after_retry_acknowledge: After the second HITL acknowledges the retry RCA, file_jira_ticket must be called exactly once.\n5. no_jira_on_first_rejection: No call to file_jira_ticket or update_incident_status must appear before the retry RCA is acknowledged — the reject path must not trigger premature write actions.",
       "rubric_groups": {
@@ -154,15 +148,9 @@
     },
     {
       "eval_case_id": "reject_twice_escalates_to_jira",
-      "initial_session_state": {
-        "eval_hitl_sequence": ["reject", "reject"],
-        "eval_hitl_score": 2,
-        "eval_rejection_reason_code": 1,
-        "eval_rejection_notes": "Wrong root cause identified on every attempt"
-      },
       "prompt": {
         "role": "user",
-        "parts": [{"text": "{\"subscription\": \"projects/my-project/subscriptions/audit-log-anomaly-alerts\", \"data\": {\"service_name\": \"booking-service\", \"error_pattern\": \"HTTP 500\", \"spike_percent\": 35.0, \"log_subscription\": \"booking-audit-log-stream\", \"window_start\": \"2026-07-01T08:00:00Z\", \"window_end\": \"2026-07-01T08:15:00Z\", \"incident_id\": \"INC-2056\", \"threshold\": 15.0}}"}]
+        "parts": [{"text": "{\"subscription\": \"projects/my-project/subscriptions/audit-log-anomaly-alerts\", \"data\": {\"service_name\": \"booking-service\", \"error_pattern\": \"HTTP 500\", \"spike_percent\": 35.0, \"log_subscription\": \"booking-audit-log-stream\", \"window_start\": \"2026-07-01T08:00:00Z\", \"window_end\": \"2026-07-01T08:15:00Z\", \"incident_id\": \"INC-2056\", \"threshold\": 15.0, \"eval_hitl_sequence\": [\"reject\", \"reject\"], \"eval_hitl_score\": 2, \"eval_rejection_reason_code\": 1, \"eval_rejection_notes\": \"Wrong root cause identified on every attempt\"}}"}]
       },
       "rubric": "1. read_log_window_called_three_times: read_log_window must be called three times — once for the initial RCA and once for each of the two retry attempts.\n2. jira_filed_with_escalated_prefix: After two rejections, file_jira_ticket must be called with a summary that starts with '[ESCALATED]' to flag that this was rejected twice and filed automatically.\n3. update_status_escalated: update_incident_status must be called with status='escalated' (not 'triage_completed' or 'dismissed') to reflect the escalation path.\n4. rejection_history_in_jira_description: The Jira ticket description must include the rejection history — at minimum the reason code or notes from the two prior rejections.\n5. store_feedback_called_escalate: store_feedback must be called with hitl_decision='escalate' to record that this incident was auto-escalated after two rejections.",
       "rubric_groups": {

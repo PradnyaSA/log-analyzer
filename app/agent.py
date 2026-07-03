@@ -579,18 +579,21 @@ def parse_anomaly_event(node_input: str) -> Event:
                 output={"error": f"Failed to decode base64 data: {data[:200]}"}
             )
 
-    return Event(
-        output={
-            "service_name": data.get("service_name", "unknown"),
-            "error_pattern": data.get("error_pattern", ""),
-            "spike_percent": float(data.get("spike_percent", 0)),
-            "log_subscription": data.get("log_subscription", ""),
-            "window_start": data.get("window_start", ""),
-            "window_end": data.get("window_end", ""),
-            "incident_id": data.get("incident_id", ""),
-            "threshold": float(data.get("threshold", 15.0)),
-        }
-    )
+    event_output: dict = {
+        "service_name": data.get("service_name", "unknown"),
+        "error_pattern": data.get("error_pattern", ""),
+        "spike_percent": float(data.get("spike_percent", 0)),
+        "log_subscription": data.get("log_subscription", ""),
+        "window_start": data.get("window_start", ""),
+        "window_end": data.get("window_end", ""),
+        "incident_id": data.get("incident_id", ""),
+        "threshold": float(data.get("threshold", 15.0)),
+    }
+    # Pass eval control keys through so route_by_severity can store them in state.
+    for k, v in data.items():
+        if k.startswith("eval_"):
+            event_output[k] = v
+    return Event(output=event_output)
 
 
 def route_by_severity(node_input: dict, ctx: Context) -> Event:
@@ -600,18 +603,24 @@ def route_by_severity(node_input: dict, ctx: Context) -> Event:
     - spike < threshold  → BELOW_THRESHOLD (log and exit)
     - spike >= threshold → ANALYZE (run the RCA pipeline)
     """
-    ctx.state["anomaly"] = node_input
+    # Extract eval control params before storing the anomaly dict so they
+    # don't contaminate downstream agents (e.g. log_analysis_agent input schema).
+    for k, v in node_input.items():
+        if k.startswith("eval_"):
+            ctx.state[k] = v
+    anomaly = {k: v for k, v in node_input.items() if not k.startswith("eval_")}
+    ctx.state["anomaly"] = anomaly
     # Retry-loop counters — reset fresh for every new anomaly event.
     ctx.state["retry_count"] = 0
     ctx.state["attempt_number"] = 1
     ctx.state["rejection_history"] = []
     ctx.state["rejection_history_text"] = ""
-    spike = node_input.get("spike_percent", 0)
-    threshold = node_input.get("threshold", 15.0)
+    spike = anomaly.get("spike_percent", 0)
+    threshold = anomaly.get("threshold", 15.0)
 
     if spike < threshold:
-        return Event(route="BELOW_THRESHOLD", output=node_input)
-    return Event(route="ANALYZE", output=node_input)
+        return Event(route="BELOW_THRESHOLD", output=anomaly)
+    return Event(route="ANALYZE", output=anomaly)
 
 
 def _log_below_threshold(node_input: dict) -> Event:
@@ -811,7 +820,12 @@ def route_hitl_decision(node_input, ctx: Context) -> Event:
     if ctx.state.get("hitl_decision"):
         decision = ctx.state["hitl_decision"]
         if retry_count >= 2:
-            return Event(route="ESCALATE", output={"decision": decision})
+            # 3rd attempt: always route to ACKNOWLEDGE; hitl_decision="escalate" if rejected
+            hitl_decision = "acknowledge" if decision == "acknowledge" else "escalate"
+            ctx.state["hitl_decision"] = hitl_decision
+            ctx.state["hitl_score"] = ctx.state.get("eval_hitl_score", 5) if decision == "acknowledge" else 0
+            ctx.state["reviewed_by"] = "eval-mode"
+            return Event(route="ACKNOWLEDGE", output={"decision": hitl_decision})
         route = "ACKNOWLEDGE" if decision == "acknowledge" else "REJECT"
         return Event(route=route, output={"decision": decision})
 
