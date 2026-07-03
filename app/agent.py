@@ -725,9 +725,11 @@ def request_rca_approval(node_input, ctx: Context):  # type: ignore[no-untyped-d
     anomaly = ctx.state.get("anomaly", {})
     retry_count = ctx.state.get("retry_count", 0)
 
-    rca_report = node_input if isinstance(node_input, str) else str(node_input)
+    incoming = node_input if isinstance(node_input, str) else str(node_input)
+    if incoming.strip():
+        ctx.state["rca_report"] = incoming
+    rca_report = ctx.state.get("rca_report", incoming)
 
-    ctx.state["rca_report"] = rca_report
     ctx.state["incident_id"] = anomaly.get("incident_id", "")
     ctx.state["service_name"] = anomaly.get("service_name", "")
     ctx.state["anomaly_payload"] = json.dumps(anomaly)
@@ -884,8 +886,8 @@ def request_rejection_reason(node_input, ctx: Context):  # type: ignore[no-untyp
     """
     if os.environ.get("EVAL_MODE", "").lower() == "true":
         return Event(output=json.dumps({
-            "reason_code": ctx.state.get("eval_rejection_reason_code", 1),
-            "notes": ctx.state.get("eval_rejection_notes", "Eval mode rejection"),
+            "reason_code": ctx.state.get("eval_rejection_reason_code") or 1,
+            "notes": ctx.state.get("eval_rejection_notes") or "Eval mode rejection",
             "reviewed_by": "eval-mode",
         }))
 
@@ -907,17 +909,27 @@ def capture_rejection_reason(node_input, ctx: Context) -> Event:
 
     Parses the rejection JSON, stores fields in ctx.state, increments retry_count
     and attempt_number, and appends to rejection_history_text for retry context.
+
+    In EVAL_MODE, request_rejection_reason is a generator that returns Event via
+    StopIteration — ADK does not forward that return value as node_input to this
+    node. So in EVAL_MODE we read eval_* keys directly from ctx.state instead of
+    parsing node_input.
     """
-    raw = node_input if isinstance(node_input, str) else str(node_input)
-    try:
-        parsed = json.loads(raw)
-        reason_code = int(parsed.get("reason_code", 7))
-        notes = str(parsed.get("notes", ""))[:200]
-        reviewed_by = str(parsed.get("reviewed_by", ctx.state.get("reviewed_by", "unknown")))
-    except (json.JSONDecodeError, TypeError, ValueError):
-        reason_code = 7
-        notes = raw[:200]
-        reviewed_by = ctx.state.get("reviewed_by", "unknown")
+    if os.environ.get("EVAL_MODE", "").lower() == "true":
+        reason_code = int(ctx.state.get("eval_rejection_reason_code") or 1)
+        notes = str(ctx.state.get("eval_rejection_notes") or "Eval mode rejection")[:200]
+        reviewed_by = "eval-mode"
+    else:
+        raw = node_input if isinstance(node_input, str) else str(node_input)
+        try:
+            parsed = json.loads(raw)
+            reason_code = int(parsed.get("reason_code", 7))
+            notes = str(parsed.get("notes", ""))[:200]
+            reviewed_by = str(parsed.get("reviewed_by", ctx.state.get("reviewed_by", "unknown")))
+        except (json.JSONDecodeError, TypeError, ValueError):
+            reason_code = 7
+            notes = raw[:200]
+            reviewed_by = ctx.state.get("reviewed_by", "unknown")
 
     reason_label = _REJECTION_REASONS.get(reason_code, "Other")
 
@@ -947,7 +959,9 @@ def capture_rejection_reason(node_input, ctx: Context) -> Event:
     ctx.state["retry_count"] = ctx.state.get("retry_count", 0) + 1
     ctx.state["attempt_number"] = attempt_number + 1
 
-    return Event(output=raw)
+    # Pass rejection summary downstream so route_after_rejection / retry_analysis_agent
+    # receive a structured, non-None value regardless of EVAL_MODE.
+    return Event(output={"reason_code": reason_code, "notes": notes, "reviewed_by": reviewed_by})
 
 
 def route_after_rejection(node_input, ctx: Context) -> Event:
