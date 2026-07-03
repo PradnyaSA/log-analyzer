@@ -33,16 +33,18 @@ custom_metrics:
           """
           Verifies that the expected tool call sequence occurred in the trace.
 
-          For above-threshold cases: read_log_window must be called before emit_rca_log.
-          For below-threshold cases: neither tool should be called.
-          For malformed cases: no tool calls should occur.
+          Case types (detected from eval_case_id):
+            below_threshold / malformed → no tool calls expected
+            reject_once_*               → read_log_window ×2, emit_rca_log ×2,
+                                          file_jira_ticket ×1 (after retry), no premature writes
+            reject_twice_* / escalat*   → read_log_window ×3, emit_rca_log ×3,
+                                          file_jira_ticket ×1, update_incident_status ×1
+            everything else             → read_log_window before emit_rca_log, no premature writes
           """
-          import json
-
           agent_data = instance.get("agent_data") or {}
           turns = agent_data.get("turns", [])
 
-          # Flatten all function_call parts across all events
+          # Flatten all function_call names across all events
           tool_calls = []
           for turn in turns:
               for event in turn.get("events", []):
@@ -54,60 +56,84 @@ custom_metrics:
 
           case_id = instance.get("eval_case_id", "")
 
-          # Below-threshold and malformed cases: no tool calls expected
+          # ── No-tool cases ──────────────────────────────────────────────────
           if "below_threshold" in case_id or "malformed" in case_id:
               if tool_calls:
                   return {
                       "score": 0.0,
                       "explanation": f"Expected no tool calls but found: {tool_calls}"
                   }
+              return {"score": 1.0, "explanation": "Correct: no tool calls for this case."}
+
+          read_count = tool_calls.count("read_log_window")
+          emit_count = tool_calls.count("emit_rca_log")
+          has_jira   = "file_jira_ticket" in tool_calls
+          has_status = "update_incident_status" in tool_calls
+
+          # ── Reject-once path (reject → retry → acknowledge) ────────────────
+          if "reject_once" in case_id:
+              issues = []
+              if read_count < 2:
+                  issues.append(f"read_log_window called {read_count}x — expected ≥2 (initial + retry)")
+              if emit_count < 2:
+                  issues.append(f"emit_rca_log called {emit_count}x — expected ≥2 (initial + retry)")
+              if not has_jira:
+                  issues.append("file_jira_ticket not called — must be filed after retry acknowledge")
+              if issues:
+                  return {"score": max(0.0, 1.0 - 0.25 * len(issues)), "explanation": "; ".join(issues)}
               return {
                   "score": 1.0,
-                  "explanation": "Correct: no tool calls were made for this case."
+                  "explanation": (
+                      f"Correct: read_log_window ×{read_count}, emit_rca_log ×{emit_count}, "
+                      "file_jira_ticket called after retry acknowledge."
+                  )
               }
 
-          # Above-threshold cases: read_log_window must be called before emit_rca_log
-          has_read = "read_log_window" in tool_calls
-          has_emit = "emit_rca_log" in tool_calls
+          # ── Reject-twice / escalation path ─────────────────────────────────
+          if "reject_twice" in case_id or "escalat" in case_id:
+              issues = []
+              if read_count < 3:
+                  issues.append(f"read_log_window called {read_count}x — expected ≥3 (initial + 2 retries)")
+              if emit_count < 3:
+                  issues.append(f"emit_rca_log called {emit_count}x — expected ≥3 (initial + 2 retries)")
+              if not has_jira:
+                  issues.append("file_jira_ticket not called — must be filed on escalation")
+              if not has_status:
+                  issues.append("update_incident_status not called")
+              if issues:
+                  return {"score": max(0.0, 1.0 - 0.25 * len(issues)), "explanation": "; ".join(issues)}
+              return {
+                  "score": 1.0,
+                  "explanation": (
+                      f"Correct escalation path: read_log_window ×{read_count}, "
+                      f"emit_rca_log ×{emit_count}, file_jira_ticket and update_incident_status called."
+                  )
+              }
 
-          if not has_read and not has_emit:
-              return {
-                  "score": 0.0,
-                  "explanation": "Neither read_log_window nor emit_rca_log was called."
-              }
-          if not has_read:
-              return {
-                  "score": 0.25,
-                  "explanation": "emit_rca_log was called but read_log_window was missing — analysis was not grounded in log data."
-              }
-          if not has_emit:
-              return {
-                  "score": 0.5,
-                  "explanation": "read_log_window was called but emit_rca_log was missing — RCA was not logged."
-              }
+          # ── Standard above-threshold case ──────────────────────────────────
+          if not read_count and not emit_count:
+              return {"score": 0.0, "explanation": "Neither read_log_window nor emit_rca_log was called."}
+          if not read_count:
+              return {"score": 0.25, "explanation": "emit_rca_log called but read_log_window missing."}
+          if not emit_count:
+              return {"score": 0.5, "explanation": "read_log_window called but emit_rca_log missing."}
 
-          # Check order: read_log_window must come before emit_rca_log
           read_idx = tool_calls.index("read_log_window")
           emit_idx = tool_calls.index("emit_rca_log")
           if read_idx > emit_idx:
-              return {
-                  "score": 0.5,
-                  "explanation": "emit_rca_log was called before read_log_window — wrong sequence."
-              }
+              return {"score": 0.5, "explanation": "emit_rca_log called before read_log_window — wrong order."}
 
-          # Check that file_jira_ticket and update_incident_status were NOT called
-          # (agent should pause for HITL before taking write actions)
-          premature_writes = [t for t in tool_calls if t in ("file_jira_ticket", "update_incident_status")]
-          if premature_writes:
+          premature = [t for t in tool_calls if t in ("file_jira_ticket", "update_incident_status")]
+          if premature:
               return {
                   "score": 0.5,
-                  "explanation": f"Agent called {premature_writes} without waiting for HITL approval."
+                  "explanation": f"Agent called {premature} without waiting for HITL approval."
               }
 
           return {
               "score": 1.0,
               "explanation": (
-                  f"Correct sequence: read_log_window (index {read_idx}) → "
-                  f"emit_rca_log (index {emit_idx}). No premature write actions."
+                  f"Correct: read_log_window (idx {read_idx}) → emit_rca_log (idx {emit_idx}). "
+                  "No premature write actions."
               )
           }

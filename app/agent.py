@@ -729,13 +729,22 @@ def request_rca_approval(node_input, ctx: Context):  # type: ignore[no-untyped-d
     ctx.state.setdefault("rejection_reviewed_by", "")
 
     if os.environ.get("EVAL_MODE", "").lower() == "true":
-        ctx.state["hitl_decision"] = "acknowledge"
-        ctx.state["hitl_score"] = 5
+        # eval_hitl_sequence lets each eval case control the decision at each attempt.
+        # Default ["acknowledge"] keeps existing single-pass eval cases working.
+        attempt_number = ctx.state.get("attempt_number", 1)
+        sequence = ctx.state.get("eval_hitl_sequence", ["acknowledge"])
+        decision = sequence[min(attempt_number - 1, len(sequence) - 1)]
+        if decision == "reject":
+            ctx.state["hitl_decision"] = "reject"
+            ctx.state["hitl_score"] = 0
+        else:
+            ctx.state["hitl_decision"] = "acknowledge"
+            ctx.state["hitl_score"] = ctx.state.get("eval_hitl_score", 5)
         ctx.state["reviewed_by"] = "eval-mode"
         return Event(
             output={
                 "hitl_skipped": True,
-                "reason": "EVAL_MODE=true — HITL pause bypassed for evaluation",
+                "decision": decision,
                 "incident_id": anomaly.get("incident_id"),
                 "rca_report": rca_report,
             }
@@ -856,7 +865,16 @@ def request_rejection_reason(node_input, ctx: Context):  # type: ignore[no-untyp
     reason code from the curated list and optionally adds notes (≤200 chars).
     In ADK's 3-tuple chain the engineer's response becomes node_input for the
     next node (capture_rejection_reason), not the return value of yield.
+    In EVAL_MODE the HITL is bypassed using eval_rejection_reason_code /
+    eval_rejection_notes from the eval case's initial_session_state.
     """
+    if os.environ.get("EVAL_MODE", "").lower() == "true":
+        return Event(output=json.dumps({
+            "reason_code": ctx.state.get("eval_rejection_reason_code", 1),
+            "notes": ctx.state.get("eval_rejection_notes", "Eval mode rejection"),
+            "reviewed_by": "eval-mode",
+        }))
+
     yield RequestInput(
         message=(
             "Please provide the rejection reason as JSON:\n\n"
