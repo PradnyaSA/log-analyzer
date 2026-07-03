@@ -147,6 +147,62 @@
       }
     },
     {
+      "eval_case_id": "invalid_event_missing_error_pattern",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "{\"subscription\": \"projects/my-project/subscriptions/audit-log-anomaly-alerts\", \"data\": {\"service_name\": \"concierge-agent\", \"anomaly_type\": \"error_rate\", \"incident_id\": \"INC-2099\", \"log_subscription\": \"audit-log-stream\", \"window_start\": \"2026-07-03T10:00:00Z\", \"window_end\": \"2026-07-03T10:10:00Z\", \"threshold\": 15.0}}"}]
+      },
+      "rubric": "1. graceful_validation_error: When required fields are missing (error_pattern for anomaly_type='error_rate'), the agent must return a human-readable error message identifying which fields are missing and what anomaly_type requires them — it must NOT crash or raise an unhandled exception.\n2. no_tool_calls_on_invalid: The agent must not call read_log_window, read_quality_log_window, emit_rca_log, file_jira_ticket, or update_incident_status when validation fails.",
+      "rubric_groups": {
+        "rca_rubrics": {
+          "rubrics": [
+            {
+              "rubric_id": "graceful_validation_error",
+              "content": {"property": {"description": "When required fields are missing (error_pattern for anomaly_type='error_rate'), the agent must return a human-readable error message identifying which fields are missing and what anomaly_type requires them — it must NOT crash or raise an unhandled exception."}}
+            },
+            {
+              "rubric_id": "no_tool_calls_on_invalid",
+              "content": {"property": {"description": "The agent must not call read_log_window, read_quality_log_window, emit_rca_log, file_jira_ticket, or update_incident_status when validation fails."}}
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "quality_degradation_intl_travel_policy",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "{\"subscription\": \"projects/my-project/subscriptions/audit-log-anomaly-alerts\", \"data\": {\"service_name\": \"concierge-agent\", \"anomaly_type\": \"retrieval_quality\", \"incident_id\": \"INC-3001\", \"log_subscription\": \"quality-audit-log-stream\", \"window_start\": \"2026-07-03T14:00:00Z\", \"window_end\": \"2026-07-03T14:15:00Z\", \"threshold\": 15.0, \"topic_cluster\": \"international_travel_policy\", \"avg_completeness_score\": 0.43, \"baseline_completeness\": 0.89, \"affected_query_count\": 47, \"sample_trace_ids\": [\"qt0083\", \"qt0085\", \"qt0087\", \"qt0089\", \"qt0091\"]}}"}]
+      },
+      "rubric": "1. calls_read_quality_log_window: The agent must call read_quality_log_window (not read_log_window) to fetch quality audit log entries before producing any analysis.\n2. rca_identifies_rag_root_cause: The RCA root cause must name a specific RAG retrieval component — e.g., stale vector index, chunk truncation, low retrieval score — not a vague restatement of the completeness degradation.\n3. rca_cites_trace_ids: Every finding must cite a specific trace_id (e.g. 'qt0089') with the exact log text as evidence.\n4. completeness_delta_reported: The RCA report must reference the observed avg completeness score and baseline (e.g. 0.43 vs 0.89 baseline) to quantify the degradation.\n5. hitl_pause_requested: The agent must pause for human review before filing any Jira ticket or updating the incident status.",
+      "rubric_groups": {
+        "rca_rubrics": {
+          "rubrics": [
+            {
+              "rubric_id": "calls_read_quality_log_window",
+              "content": {"property": {"description": "The agent must call read_quality_log_window (not read_log_window) to fetch quality audit log entries before producing any analysis."}}
+            },
+            {
+              "rubric_id": "rca_identifies_rag_root_cause",
+              "content": {"property": {"description": "The RCA root cause must name a specific RAG retrieval component — e.g., stale vector index, chunk truncation, low retrieval score — not a vague restatement of the completeness degradation."}}
+            },
+            {
+              "rubric_id": "rca_cites_trace_ids",
+              "content": {"property": {"description": "Every finding must cite a specific trace_id (e.g. 'qt0089') with the exact log text as evidence."}}
+            },
+            {
+              "rubric_id": "completeness_delta_reported",
+              "content": {"property": {"description": "The RCA report must reference the observed avg completeness score and baseline (e.g. 0.43 vs 0.89 baseline) to quantify the degradation."}}
+            },
+            {
+              "rubric_id": "hitl_pause_requested",
+              "content": {"property": {"description": "The agent must pause for human review before filing any Jira ticket or updating the incident status."}}
+            }
+          ]
+        }
+      }
+    },
+    {
       "eval_case_id": "reject_twice_escalates_to_jira",
       "prompt": {
         "role": "user",

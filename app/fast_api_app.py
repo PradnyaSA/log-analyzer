@@ -102,19 +102,30 @@ def _append_eval_case(incident_id: str, record: dict, label: str) -> None:
     except Exception:
         anomaly = {}
 
+    anomaly_type = anomaly.get("anomaly_type", record.get("anomaly_type", "error_rate"))
+
     # Reconstruct minimal Pub/Sub envelope for eval replay
     prompt_text = json.dumps({"subscription": "feedback-eval", "data": anomaly})
 
     eval_case_id = f"feedback_{incident_id.lower().replace('-', '_')}_{label}"
 
     if label == "positive":
-        rubric = (
-            "1. calls_read_log_window: The agent must call read_log_window before producing analysis.\n"
-            "2. calls_emit_rca_log: The agent must call emit_rca_log with a non-empty root_cause.\n"
-            "3. rca_contains_line_citation: Every finding must cite a specific log line number with exact text.\n"
-            "4. root_cause_is_specific: Root cause must name a specific technical reason, not restate the error.\n"
-            "5. hitl_pause_requested: The agent must pause for human review before filing Jira or updating status."
-        )
+        if anomaly_type == "retrieval_quality":
+            rubric = (
+                "1. calls_read_quality_log_window: The agent must call read_quality_log_window before producing analysis.\n"
+                "2. calls_emit_rca_log: The agent must call emit_rca_log with a non-empty root_cause.\n"
+                "3. rca_cites_trace_ids: Every finding must cite a specific trace_id with exact log text as evidence.\n"
+                "4. root_cause_names_rag_component: Root cause must name a specific RAG component (vector index, chunk size, etc.), not restate the degradation.\n"
+                "5. hitl_pause_requested: The agent must pause for human review before filing Jira or updating status."
+            )
+        else:
+            rubric = (
+                "1. calls_read_log_window: The agent must call read_log_window before producing analysis.\n"
+                "2. calls_emit_rca_log: The agent must call emit_rca_log with a non-empty root_cause.\n"
+                "3. rca_contains_line_citation: Every finding must cite a specific log line number with exact text.\n"
+                "4. root_cause_is_specific: Root cause must name a specific technical reason, not restate the error.\n"
+                "5. hitl_pause_requested: The agent must pause for human review before filing Jira or updating status."
+            )
     else:
         rubric = (
             "1. rca_produced: The agent must attempt an RCA and produce a report.\n"

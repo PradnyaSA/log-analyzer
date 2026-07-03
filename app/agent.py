@@ -32,6 +32,7 @@ Pipeline:
 import base64
 import json
 import os
+from typing import Literal, Optional
 
 from dotenv import load_dotenv
 
@@ -90,9 +91,18 @@ _REJECTION_REASONS_TEXT = "\n".join(
 class AnomalyEvent(BaseModel):
     """Anomaly payload delivered via Pub/Sub."""
 
+    anomaly_type: Literal["error_rate", "retrieval_quality"] = Field(
+        default="error_rate",
+        description="Type of anomaly: 'error_rate' for HTTP error spikes, 'retrieval_quality' for semantic quality degradation",
+    )
     service_name: str = Field(description="Name of the service with the anomaly")
-    error_pattern: str = Field(description="Error type or pattern, e.g. 'HTTP 404'")
-    spike_percent: float = Field(description="Percentage spike above baseline")
+    error_pattern: str = Field(
+        default="",
+        description="Error type or pattern, e.g. 'HTTP 404' (error_rate anomalies only)",
+    )
+    spike_percent: float = Field(
+        default=0.0, description="Percentage spike above baseline (error_rate anomalies only)"
+    )
     log_subscription: str = Field(
         description="Pub/Sub subscription name for the audit log stream"
     )
@@ -102,7 +112,27 @@ class AnomalyEvent(BaseModel):
     window_end: str = Field(description="ISO 8601 end of the log window to analyze")
     incident_id: str = Field(description="Incident tracking ID")
     threshold: float = Field(
-        description="Anomaly threshold that was crossed (percent)"
+        default=15.0, description="Anomaly threshold that was crossed (percent)"
+    )
+    # retrieval_quality optional fields
+    topic_cluster: Optional[str] = Field(
+        default=None,
+        description="Topic cluster with quality degradation, e.g. 'international_travel_policy'",
+    )
+    quality_signals: Optional[dict] = Field(
+        default=None, description="Quality signal breakdown dict"
+    )
+    affected_query_count: Optional[int] = Field(
+        default=None, description="Number of queries affected in the window"
+    )
+    avg_completeness_score: Optional[float] = Field(
+        default=None, description="Average completeness score in window (0.0–1.0)"
+    )
+    baseline_completeness: Optional[float] = Field(
+        default=None, description="Expected baseline completeness score (0.0–1.0)"
+    )
+    sample_trace_ids: Optional[list] = Field(
+        default=None, description="Sample trace IDs of degraded queries"
     )
 
 
@@ -262,6 +292,147 @@ def read_log_window(
         "error_pattern": error_pattern,
         "entries": corpus[:max_entries],
         "total_count": len(corpus),
+    }
+
+
+def read_quality_log_window(
+    log_subscription: str,
+    window_start: str,
+    window_end: str,
+    topic_cluster: str,
+    max_entries: int,
+) -> dict:
+    """Read quality-enriched audit logs from the AI agent response stream.
+
+    Fetches quality audit log entries within the specified time window filtered
+    to the given topic cluster. Entries include completeness scores,
+    returned_fields vs expected_fields, and RAG retrieval signals.
+
+    Args:
+        log_subscription: Pub/Sub subscription name for the quality audit log stream.
+        window_start: ISO 8601 start timestamp of the log window.
+        window_end: ISO 8601 end timestamp of the log window.
+        topic_cluster: Topic cluster to filter for, e.g. 'international_travel_policy'.
+        max_entries: Maximum number of log entries to return.
+
+    Returns:
+        dict with 'status', 'entries' (list of quality log entries), and 'total_count'.
+    """
+    # Production: pull quality-enriched structured log messages from the Pub/Sub
+    # subscription within the time window using google.cloud.pubsub_v1.SubscriberClient,
+    # filtered by topic_cluster. Stub corpus below simulates a real degradation event
+    # in the international_travel_policy cluster caused by a stale vector index.
+
+    _intl_policy_corpus = [
+        {
+            "line": 4401,
+            "timestamp": "2026-07-03T14:01:12Z",
+            "level": "INFO",
+            "trace_id": "qt0081",
+            "text": (
+                '[concierge-agent] query="visa requirements for Japan" '
+                "topic=international_travel_policy status=200 completeness=0.91 "
+                'returned_fields=["visa_type","duration","entry_requirements"] '
+                'expected_fields=["visa_type","duration","entry_requirements","health_docs"] '
+                "retrieval_score=0.88"
+            ),
+        },
+        {
+            "line": 4407,
+            "timestamp": "2026-07-03T14:03:28Z",
+            "level": "WARNING",
+            "trace_id": "qt0083",
+            "text": (
+                '[concierge-agent] query="travel insurance for EU trip" '
+                "topic=international_travel_policy status=200 completeness=0.52 "
+                'returned_fields=["basic_coverage"] '
+                'expected_fields=["basic_coverage","medical_evacuation","trip_cancellation","pre_existing_conditions"] '
+                "retrieval_score=0.61 rag_chunks_retrieved=2 rag_chunks_expected=8"
+            ),
+        },
+        {
+            "line": 4412,
+            "timestamp": "2026-07-03T14:04:55Z",
+            "level": "WARNING",
+            "trace_id": "qt0085",
+            "text": (
+                '[concierge-agent] query="international roaming policy Asia Pacific" '
+                "topic=international_travel_policy status=200 completeness=0.48 "
+                'returned_fields=["roaming_rates"] '
+                'expected_fields=["roaming_rates","data_caps","partner_networks","emergency_numbers","sim_options"] '
+                "retrieval_score=0.59 rag_chunks_retrieved=1 rag_chunks_expected=5"
+            ),
+        },
+        {
+            "line": 4419,
+            "timestamp": "2026-07-03T14:06:11Z",
+            "level": "WARNING",
+            "trace_id": "qt0087",
+            "text": (
+                '[concierge-agent] query="baggage allowance for international connections" '
+                "topic=international_travel_policy status=200 completeness=0.44 "
+                'returned_fields=["carry_on_limit"] '
+                'expected_fields=["carry_on_limit","checked_bags","oversize_fees","connection_rules","airline_specific"] '
+                "retrieval_score=0.57 rag_chunks_retrieved=1 rag_chunks_expected=5"
+            ),
+        },
+        {
+            "line": 4425,
+            "timestamp": "2026-07-03T14:07:33Z",
+            "level": "ERROR",
+            "trace_id": "qt0089",
+            "text": (
+                "[concierge-agent] rag_retrieval_warning: topic=international_travel_policy "
+                "avg_retrieval_score=0.58 threshold=0.75 "
+                "— vector index may be stale; last_reindex=2026-06-19T08:00:00Z (14 days ago)"
+            ),
+        },
+        {
+            "line": 4431,
+            "timestamp": "2026-07-03T14:08:47Z",
+            "level": "WARNING",
+            "trace_id": "qt0091",
+            "text": (
+                '[concierge-agent] query="customs declaration rules South America" '
+                "topic=international_travel_policy status=200 completeness=0.41 "
+                'returned_fields=["declaration_form"] '
+                'expected_fields=["declaration_form","prohibited_items","duty_free_limits","currency_limits","agricultural_restrictions"] '
+                "retrieval_score=0.54 rag_chunks_retrieved=1 rag_chunks_expected=5"
+            ),
+        },
+        {
+            "line": 4438,
+            "timestamp": "2026-07-03T14:09:59Z",
+            "level": "WARNING",
+            "trace_id": "qt0093",
+            "text": (
+                '[concierge-agent] query="health documentation for travel to malaria zones" '
+                "topic=international_travel_policy status=200 completeness=0.38 "
+                'returned_fields=["vaccination_required"] '
+                'expected_fields=["vaccination_required","prophylaxis_options","clinic_locator","timing_before_travel","certificate_format"] '
+                "retrieval_score=0.51 rag_chunks_retrieved=1 rag_chunks_expected=5"
+            ),
+        },
+        {
+            "line": 4445,
+            "timestamp": "2026-07-03T14:11:22Z",
+            "level": "ERROR",
+            "trace_id": "qt0095",
+            "text": (
+                "[concierge-agent] quality_degradation_alert: topic=international_travel_policy "
+                "affected_queries=47 window=60min avg_completeness=0.43 baseline_completeness=0.89 "
+                "degradation_delta=-0.46 — threshold exceeded"
+            ),
+        },
+    ]
+
+    return {
+        "status": "success",
+        "subscription": log_subscription,
+        "window": {"start": window_start, "end": window_end},
+        "topic_cluster": topic_cluster,
+        "entries": _intl_policy_corpus[:max_entries],
+        "total_count": len(_intl_policy_corpus),
     }
 
 
@@ -531,6 +702,7 @@ def store_feedback(
     store[incident_id] = {
         "incident_id": incident_id,
         "service_name": anomaly.get("service_name", ""),
+        "anomaly_type": anomaly.get("anomaly_type", "error_rate"),
         "error_pattern": anomaly.get("error_pattern", ""),
         "spike_percent": anomaly.get("spike_percent", 0),
         "attempts": attempts,
@@ -579,7 +751,14 @@ def parse_anomaly_event(node_input: str) -> Event:
                 output={"error": f"Failed to decode base64 data: {data[:200]}"}
             )
 
+    # Infer anomaly_type if not provided: quality events include avg_completeness_score
+    anomaly_type = data.get(
+        "anomaly_type",
+        "retrieval_quality" if "avg_completeness_score" in data else "error_rate",
+    )
+
     event_output: dict = {
+        "anomaly_type": anomaly_type,
         "service_name": data.get("service_name", "unknown"),
         "error_pattern": data.get("error_pattern", ""),
         "spike_percent": float(data.get("spike_percent", 0)),
@@ -588,23 +767,178 @@ def parse_anomaly_event(node_input: str) -> Event:
         "window_end": data.get("window_end", ""),
         "incident_id": data.get("incident_id", ""),
         "threshold": float(data.get("threshold", 15.0)),
+        # Quality-specific fields (None when not present)
+        "topic_cluster": data.get("topic_cluster"),
+        "quality_signals": data.get("quality_signals"),
+        "affected_query_count": data.get("affected_query_count"),
+        "avg_completeness_score": data.get("avg_completeness_score"),
+        "baseline_completeness": data.get("baseline_completeness"),
+        "sample_trace_ids": data.get("sample_trace_ids"),
     }
-    # Pass eval control keys through so route_by_severity can store them in state.
+    # Pass eval control keys through so route_by_anomaly_type can store them in state.
     for k, v in data.items():
         if k.startswith("eval_"):
             event_output[k] = v
     return Event(output=event_output)
 
 
-def route_by_severity(node_input: dict, ctx: Context) -> Event:
-    """Route based on whether the spike exceeds the anomaly threshold.
+def validate_event(node_input: dict, ctx: Context) -> Event:
+    """Validate that the parsed event has all required fields for its anomaly_type.
 
-    Stores anomaly data in workflow state for downstream nodes, then routes:
-    - spike < threshold  → BELOW_THRESHOLD (log and exit)
-    - spike >= threshold → ANALYZE (run the RCA pipeline)
+    Propagates parse errors (from parse_anomaly_event) as INVALID.
+    For error_rate: requires service_name, error_pattern, log_subscription,
+      window_start, window_end, incident_id.
+    For retrieval_quality: requires service_name, log_subscription, window_start,
+      window_end, incident_id, topic_cluster, avg_completeness_score, baseline_completeness.
+
+    Routes:
+      INVALID → validation_error_agent (human-readable error, exit)
+      VALID   → deduplicate_check
     """
-    # Extract eval control params before storing the anomaly dict so they
-    # don't contaminate downstream agents (e.g. log_analysis_agent input schema).
+    if "error" in node_input:
+        ctx.state["validation_error"] = node_input["error"]
+        return Event(route="INVALID", output=node_input)
+
+    anomaly_type = node_input.get("anomaly_type", "error_rate")
+    missing = []
+
+    for field in ("service_name", "log_subscription", "window_start", "window_end", "incident_id"):
+        if not node_input.get(field):
+            missing.append(field)
+
+    if anomaly_type == "error_rate":
+        if not node_input.get("error_pattern"):
+            missing.append("error_pattern")
+    elif anomaly_type == "retrieval_quality":
+        for field in ("topic_cluster", "avg_completeness_score", "baseline_completeness"):
+            if node_input.get(field) is None:
+                missing.append(field)
+
+    if missing:
+        error_msg = (
+            f"Missing required fields for anomaly_type='{anomaly_type}': {', '.join(missing)}"
+        )
+        ctx.state["validation_error"] = error_msg
+        return Event(
+            route="INVALID",
+            output={
+                "error": error_msg,
+                "anomaly_type": anomaly_type,
+                "incident_id": node_input.get("incident_id", ""),
+            },
+        )
+
+    return Event(route="VALID", output=node_input)
+
+
+def deduplicate_check(node_input: dict, ctx: Context) -> Event:
+    """Check the feedback store for an existing record with the same incident_id.
+
+    Blocks re-processing if the incident is already in-flight (pending_jira) or
+    fully closed. Allows re-triggering if a previous run was rejected (status='rejected')
+    so engineers can request a fresh attempt.
+
+    In EVAL_MODE always routes NEW to avoid store state affecting eval reproducibility.
+
+    Routes:
+      DUPLICATE → _log_duplicate (exit)
+      NEW       → enrich_context
+    """
+    if os.environ.get("EVAL_MODE", "").lower() == "true":
+        return Event(route="NEW", output=node_input)
+
+    incident_id = node_input.get("incident_id", "")
+    if os.path.exists(_FEEDBACK_STORE_PATH):
+        with open(_FEEDBACK_STORE_PATH) as f:
+            store = json.load(f)
+    else:
+        store = {}
+
+    record = store.get(incident_id)
+    if record:
+        status = record.get("status", "")
+        if status in ("pending_jira", "closed"):
+            ctx.state["duplicate_incident_id"] = incident_id
+            ctx.state["duplicate_status"] = status
+            return Event(
+                route="DUPLICATE",
+                output={"incident_id": incident_id, "status": status},
+            )
+
+    return Event(route="NEW", output=node_input)
+
+
+def _log_duplicate(node_input: dict, ctx: Context) -> Event:
+    """Emit a structured log for a duplicate incident and exit early."""
+    incident_id = node_input.get("incident_id", ctx.state.get("duplicate_incident_id", ""))
+    status = node_input.get("status", ctx.state.get("duplicate_status", ""))
+    log_entry = {
+        "severity": "INFO",
+        "message": (
+            f"Duplicate incident detected — skipping. "
+            f"incident_id={incident_id} already has status={status}"
+        ),
+        "incident_id": incident_id,
+        "duplicate_status": status,
+    }
+    print(json.dumps(log_entry), flush=True)
+    return Event(output=node_input)
+
+
+def enrich_context(node_input: dict, ctx: Context) -> Event:
+    """Enrich workflow state with historical incident data for the same service.
+
+    Reads the feedback store and injects the 3 most recent prior incidents
+    for the same service into ctx.state so downstream agents can reference
+    recurrence patterns, prior rejection reasons, and resolution outcomes.
+    """
+    service_name = node_input.get("service_name", "")
+    current_id = node_input.get("incident_id", "")
+
+    if os.path.exists(_FEEDBACK_STORE_PATH):
+        with open(_FEEDBACK_STORE_PATH) as f:
+            store = json.load(f)
+    else:
+        store = {}
+
+    related = [
+        r for iid, r in store.items()
+        if r.get("service_name") == service_name and iid != current_id
+    ]
+    # Sort by most recent attempt timestamp descending, keep last 3
+    related.sort(
+        key=lambda r: (r.get("attempts") or [{}])[-1].get("timestamp", ""),
+        reverse=True,
+    )
+    related = related[:3]
+
+    ctx.state["historical_context"] = related
+    ctx.state["historical_context_text"] = (
+        "\n".join(
+            f"  - {r['incident_id']}: {r.get('anomaly_type', r.get('error_pattern', ''))} "
+            f"retry_count={r.get('retry_count', 0)} status={r.get('status', '')} "
+            f"score={r.get('final_accuracy_score')}"
+            for r in related
+        )
+        if related
+        else "No prior incidents for this service."
+    )
+
+    return Event(output=node_input)
+
+
+def route_by_anomaly_type(node_input: dict, ctx: Context) -> Event:
+    """Route based on anomaly_type and (for error_rate) spike vs threshold.
+
+    Stores anomaly data in workflow state for downstream nodes. Extracts and
+    isolates eval control keys so they don't contaminate agent input schemas.
+    Resets retry-loop counters fresh for every new anomaly event.
+
+    Routes:
+      BELOW_THRESHOLD  → _log_below_threshold → below_threshold_agent (exit)
+      ANALYZE_ERROR    → log_analysis_agent (error-rate RCA pipeline)
+      ANALYZE_QUALITY  → quality_analysis_agent (retrieval-quality RCA pipeline)
+    """
     for k, v in node_input.items():
         if k.startswith("eval_"):
             ctx.state[k] = v
@@ -615,12 +949,17 @@ def route_by_severity(node_input: dict, ctx: Context) -> Event:
     ctx.state["attempt_number"] = 1
     ctx.state["rejection_history"] = []
     ctx.state["rejection_history_text"] = ""
+
+    anomaly_type = anomaly.get("anomaly_type", "error_rate")
+
+    if anomaly_type == "retrieval_quality":
+        return Event(route="ANALYZE_QUALITY", output=anomaly)
+
     spike = anomaly.get("spike_percent", 0)
     threshold = anomaly.get("threshold", 15.0)
-
     if spike < threshold:
         return Event(route="BELOW_THRESHOLD", output=anomaly)
-    return Event(route="ANALYZE", output=anomaly)
+    return Event(route="ANALYZE_ERROR", output=anomaly)
 
 
 def _log_below_threshold(node_input: dict) -> Event:
@@ -652,6 +991,26 @@ below_threshold = Agent(
         "and required no action. Produce a concise one-sentence acknowledgement "
         "confirming that the anomaly was evaluated, the spike and threshold values, "
         "and that no RCA or incident action was taken."
+    ),
+)
+
+# LLM node for invalid or unparseable events — produces a human-readable error
+# report and exits. No tools are called.
+validation_error_agent = Agent(
+    name="validation_error_agent",
+    model=Gemini(
+        model=_MODEL,
+        retry_options=types.HttpRetryOptions(attempts=3),
+    ),
+    mode="single_turn",
+    instruction=(
+        "You received an anomaly event that failed validation. "
+        "The error details are provided in your input. "
+        "Produce a concise, human-readable summary that: "
+        "(1) states what validation check failed, "
+        "(2) identifies which fields are missing or invalid, "
+        "(3) advises how to correct the upstream event publisher to fix the issue. "
+        "Do not call any tools. Do not perform RCA or incident analysis."
     ),
 )
 
@@ -704,6 +1063,66 @@ You receive an anomaly event. Your job:
 """,
     input_schema=AnomalyEvent,
     tools=[read_log_window, emit_rca_log],
+)
+
+
+# ---------------------------------------------------------------------------
+# LLM quality analysis agent — reads quality logs and produces a grounded
+# retrieval degradation RCA report
+# ---------------------------------------------------------------------------
+
+quality_analysis_agent = Agent(
+    name="quality_analysis_agent",
+    model=Gemini(
+        model=_MODEL,
+        retry_options=types.HttpRetryOptions(attempts=3),
+    ),
+    mode="single_turn",
+    instruction="""You are a quality analysis expert performing root cause analysis on AI agent response degradation.
+
+You receive a quality anomaly event indicating that the concierge-agent is returning semantically
+incomplete or inaccurate responses — even though HTTP status codes are 200 OK. The degradation
+is in a specific topic cluster (e.g. international travel policy questions).
+
+Your job:
+
+1. Call `read_quality_log_window` with the log_subscription, window_start, window_end, and
+   topic_cluster from the anomaly event.
+2. Analyze the returned quality log entries carefully:
+   - Identify which policy fields or sections are missing (returned_fields vs expected_fields).
+   - Find the queries with the lowest completeness scores and highest field omission counts.
+   - Look for RAG retrieval signals: low retrieval_score, rag_chunks_retrieved << rag_chunks_expected,
+     or an explicit rag_retrieval_warning entry pointing to index staleness.
+   - State the single root cause — the RAG or retrieval component responsible for the degradation
+     (e.g., stale vector index, chunk truncation, embedding model drift, missing policy documents).
+3. Cite the EXACT trace_id(s) and log line number(s) for EVERY finding. No claim without a citation.
+4. Call `emit_rca_log` with your root cause, confidence level, and citation lines.
+5. Return the complete RCA report in this format:
+
+## Quality Degradation RCA — <incident_id>
+
+**Service:** <service_name>
+**Anomaly:** Retrieval quality degradation in topic cluster: <topic_cluster>
+**Log window:** <window_start> → <window_end>
+**Affected queries:** <affected_query_count> queries, avg completeness <avg_completeness_score> vs baseline <baseline_completeness>
+
+### Root Cause
+<one-sentence statement of root cause naming the specific RAG component>
+
+### Evidence
+- **Finding:** <description> — *Trace <trace_id>, Log line N: `<exact log text>`*
+(repeat for each finding)
+
+### Impact
+<brief description of user-facing impact — what users are getting wrong or incomplete>
+
+### Recommended Fix
+<specific, actionable fix — e.g., re-index vector store, update chunking config, refresh policy documents>
+
+**Confidence:** high | medium | low
+""",
+    input_schema=AnomalyEvent,
+    tools=[read_quality_log_window, emit_rca_log],
 )
 
 
@@ -1010,39 +1429,27 @@ retry_analysis_agent = Agent(
 
 Your task: produce an improved RCA that directly addresses the rejection feedback above.
 
+First, determine the anomaly type from the original anomaly payload above:
+- If anomaly_type is "retrieval_quality": call `read_quality_log_window` using the
+  log_subscription, window_start, window_end, and topic_cluster from the anomaly.
+- Otherwise (anomaly_type "error_rate" or not set): call `read_log_window` using
+  the log_subscription, window_start, window_end, and error_pattern from the anomaly.
+
 Steps:
-1. Call `read_log_window` again using the subscription, time window, and error pattern from the anomaly above.
+1. Call the appropriate log-reading tool based on anomaly_type (see above).
 2. Carefully re-examine the logs with the rejection feedback in mind:
    - If the feedback says the root cause was wrong, look deeper for the true cause.
-   - If citations were inaccurate, re-verify every log line number you cite.
+   - If citations were inaccurate, re-verify every log line number or trace_id you cite.
    - If the RCA was incomplete, ensure you cover all findings in the log window.
-3. Cite the EXACT log line number(s) for EVERY finding. No claim without a citation.
+3. Cite the EXACT log line number(s) or trace_id(s) for EVERY finding. No claim without a citation.
 4. Call `emit_rca_log` with your updated root cause, confidence level, and citation lines.
-5. Return the complete improved RCA in this format:
+5. Return the complete improved RCA in the same format as the original, with an added section:
 
-## RCA Report (Retry) — <incident_id>
-
-**Service:** <service_name>
-**Anomaly:** <error_pattern> spike of <spike_percent>%
-**Log window:** <window_start> → <window_end>
-**Changes from previous RCA:** <brief summary of what was corrected>
-
-### Root Cause
-<one-sentence statement of root cause>
-
-### Evidence
-- **Finding:** <description> — *Log line N: `<exact log text>`*
-(repeat for each finding)
-
-### Impact
-<brief description of user-facing impact>
-
-### Recommended Fix
-<specific, actionable fix>
+**Changes from previous RCA:** <brief summary of what was corrected or added>
 
 **Confidence:** high | medium | low
 """,
-    tools=[read_log_window, emit_rca_log],
+    tools=[read_log_window, read_quality_log_window, emit_rca_log],
 )
 
 
@@ -1140,18 +1547,39 @@ Be concise — report exactly what was done.
 root_agent = Workflow(
     name="log_analyzer",
     edges=[
-        ("START", parse_anomaly_event, route_by_severity),
+        # Pre-processing chain: parse → validate → dedup → enrich → route
+        ("START", parse_anomaly_event, validate_event),
         (
-            route_by_severity,
+            validate_event,
+            {
+                "INVALID": validation_error_agent,
+                "VALID": deduplicate_check,
+            },
+        ),
+        (
+            deduplicate_check,
+            {
+                "DUPLICATE": _log_duplicate,
+                "NEW": enrich_context,
+            },
+        ),
+        (enrich_context, route_by_anomaly_type),
+        # 3-way routing by anomaly type
+        (
+            route_by_anomaly_type,
             {
                 "BELOW_THRESHOLD": _log_below_threshold,
-                "ANALYZE": log_analysis_agent,
+                "ANALYZE_ERROR": log_analysis_agent,
+                "ANALYZE_QUALITY": quality_analysis_agent,
             },
         ),
         (_log_below_threshold, below_threshold),
-        # First attempt: analysis → HITL → route (defines request_rca_approval→route_hitl_decision)
+        # Error-rate path: analysis → HITL → route
+        # (defines request_rca_approval→route_hitl_decision 3-tuple)
         (log_analysis_agent, request_rca_approval, route_hitl_decision),
-        # Retry attempt(s) feed into the same HITL node (edge already defined above)
+        # Quality path feeds into the same HITL node
+        (quality_analysis_agent, request_rca_approval),
+        # Retry attempt(s) feed into the same HITL node
         (retry_analysis_agent, request_rca_approval),
         # HITL routing: acknowledge → action_agent, reject → retry loop
         # (3rd attempt always routes ACKNOWLEDGE with hitl_decision="escalate" in state)
