@@ -37,6 +37,123 @@ Compared to full-stack observability platforms (Splunk, Elastic, Datadog, Dynatr
 
 ---
 
+## Technical Stack & Architecture
+
+### Design Choices
+
+**Workflow graph over ReAct loop.** The pipeline has hard branching requirements: early exit for below-threshold events, HITL pause before any write action, a structured retry loop on rejection, and an escalation path after three failed attempts. These are expressed as explicit graph edges in a `Workflow` DAG. A free-form ReAct loop cannot guarantee this routing determinism.
+
+**Pub/Sub ambient trigger.** The agent carries zero idle cost. It is invoked only when an anomaly event is published — no polling, no always-on process. The FastAPI app exposes a `/pubsub` endpoint that decodes the base64 Pub/Sub envelope and hands the payload to the agent.
+
+**HITL before all write actions.** Jira tickets and incident status transitions are irreversible. Every write is gated behind an engineer approval step (`RequestInput` pause). The engineer sees the full RCA with log-line citations before committing.
+
+**Grounded citations enforced by instruction.** Every claim in an RCA must reference an exact log line number or trace ID — enforced in the agent's system instruction and verified by the LLM-as-judge eval metric (`rca_rubric_quality`).
+
+**Structured rejection feedback loop.** A rejection does not simply discard the analysis. The engineer selects a typed reason code (1–7) and adds free-text notes. The retry agent receives this structured context and must explicitly address the rejection before producing a new RCA. After two rejections the ticket is escalated to engineering regardless of the third HITL decision.
+
+**Dual anomaly type support.** The pipeline handles both `error_rate` anomalies (HTTP error spikes with log-line evidence) and `retrieval_quality` anomalies (semantic completeness degradation on a topic cluster, measured by completeness scores against a baseline).
+
+### Workflow Graph
+
+```
+parse_anomaly_event → validate_event → deduplicate_check → enrich_context → route_by_anomaly_type
+  │
+  ├── INVALID          → validation_error_agent (exit)
+  ├── DUPLICATE        → _log_duplicate (exit)
+  ├── BELOW_THRESHOLD  → _log_below_threshold → below_threshold_agent (exit)
+  │
+  ├── ANALYZE_ERROR    → log_analysis_agent
+  │                              │
+  │                              └──────────────────────────────────────────┐
+  ├── ANALYZE_QUALITY  → quality_analysis_agent                             │
+  │                              │                                          │
+  │                         request_rca_approval (HITL #1)  ◄──────────────┘
+  │                              │
+  │                   route_hitl_decision
+  │                    ├── ACKNOWLEDGE → action_agent (exit)
+  │                    └── REJECT → request_rejection_reason (HITL #2)
+  │                                      │
+  │                              capture_rejection_reason
+  │                                      │
+  │                              route_after_rejection
+  │                    ├── RETRY    → retry_analysis_agent ──► request_rca_approval (loop)
+  │                    └── ESCALATE → action_agent (Jira + escalated status)
+```
+
+### Agents
+
+| Agent | Role | Tools |
+|---|---|---|
+| `log_analysis_agent` | Reads error log window; produces grounded RCA with exact log-line citations | `read_log_window`, `emit_rca_log` |
+| `quality_analysis_agent` | Reads quality log window; diagnoses retrieval completeness degradation by topic cluster | `read_quality_log_window`, `emit_rca_log` |
+| `retry_analysis_agent` | Re-analyzes after engineer rejection; must address structured rejection reason and re-cite evidence | `read_log_window`, `read_quality_log_window`, `emit_rca_log` |
+| `action_agent` | Executes post-HITL write actions: Jira filing, incident status transition, feedback storage; handles both approve and escalate branches | `file_jira_ticket`, `update_incident_status`, `store_feedback` |
+| `below_threshold_agent` | Produces a human-readable summary for sub-threshold events and exits cleanly | — |
+| `validation_error_agent` | Handles malformed or unparseable Pub/Sub payloads with a structured error report | — |
+
+### Tool Calls
+
+| Tool | Signature | Purpose |
+|---|---|---|
+| `read_log_window` | `(log_subscription, window_start, window_end, error_pattern, max_entries)` | Fetches error-rate log entries from the audit stream for the incident time window |
+| `read_quality_log_window` | `(log_subscription, window_start, window_end, topic_cluster, max_entries)` | Fetches retrieval-quality trace entries filtered by topic cluster; returns completeness scores per trace |
+| `emit_rca_log` | `(incident_id, service_name, root_cause, confidence, spike_percent, citation_lines)` | Emits a structured JSON log line recording the RCA; creates an auditable trail independent of Jira |
+| `file_jira_ticket` | `(incident_id, summary, description, priority, labels)` | Creates a Jira story with the RCA summary and full evidence in the description |
+| `update_incident_status` | `(incident_id, status, resolution_note)` | Transitions the incident record (`triage_completed`, `escalated`, `dismissed`) |
+| `store_feedback` | `(incident_id, attempt_number, hitl_decision, hitl_score, reviewed_by, rejection_reason_code, rejection_notes, jira_key, anomaly_payload)` | Persists HITL feedback for deduplication, historical context enrichment, and outcome tracking |
+
+### Event Subscription Schema
+
+**Pub/Sub envelope** (delivered to `/pubsub`):
+
+```json
+{
+  "subscription": "projects/<project>/subscriptions/<sub-name>",
+  "data": "<base64-encoded JSON>"
+}
+```
+
+**Decoded anomaly payload — `error_rate` (HTTP error spike):**
+
+```json
+{
+  "anomaly_type": "error_rate",
+  "service_name": "booking-service",
+  "error_pattern": "HTTP 500",
+  "spike_percent": 35.0,
+  "threshold": 15.0,
+  "log_subscription": "booking-audit-log-stream",
+  "window_start": "2026-07-01T08:00:00Z",
+  "window_end": "2026-07-01T08:15:00Z",
+  "incident_id": "INC-2055"
+}
+```
+
+**Decoded anomaly payload — `retrieval_quality` (semantic degradation):**
+
+```json
+{
+  "anomaly_type": "retrieval_quality",
+  "service_name": "concierge-agent",
+  "topic_cluster": "international_travel_policy",
+  "avg_completeness_score": 0.43,
+  "baseline_completeness": 0.89,
+  "affected_query_count": 47,
+  "sample_trace_ids": ["qt0083", "qt0085", "qt0087"],
+  "log_subscription": "quality-audit-log-stream",
+  "window_start": "2026-07-03T14:00:00Z",
+  "window_end": "2026-07-03T14:15:00Z",
+  "incident_id": "INC-3001",
+  "threshold": 15.0
+}
+```
+
+The pipeline auto-infers `anomaly_type` from payload shape if omitted: presence of `avg_completeness_score` signals `retrieval_quality`; absence defaults to `error_rate`. Validation enforces type-specific required fields before analysis agents are invoked.
+
+**Stack:** Google ADK 2.0 · Gemini 2.5 Flash · Agent Runtime (Vertex AI us-east1) · Pub/Sub trigger · Python 3.13 / FastAPI · Workflow DAG with HITL resumability
+
+---
+
 ## Running Locally / Demo
 
 ### Prerequisites
